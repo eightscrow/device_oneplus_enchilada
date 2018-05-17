@@ -1,0 +1,64 @@
+From ceb36795ad454cbdb005ea2a4d6c148e42da9ccf Mon Sep 17 00:00:00 2001
+From: Sauhard Pande <sauhardp@codeaurora.org>
+Date: Thu, 17 May 2018 15:29:06 +0530
+Subject: [PATCH] Camera2: Notify fps as Session Based Parameter
+
+Provided interface to enable session based parameter
+to select sensor mode.
+
+CRs-Fixed: 2152363
+
+Change-Id: I214e51f1dff40dfa2be240e61fc99661ea0fa58a
+Signed-off-by: Joey Huab <joey@evolution-x.org>
+---
+ core/java/android/hardware/camera2/CameraDevice.java       | 4 ++++
+ .../android/hardware/camera2/impl/CameraDeviceImpl.java    | 7 +++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/core/java/android/hardware/camera2/CameraDevice.java b/core/java/android/hardware/camera2/CameraDevice.java
+index c10c944cc7cde..aebfe04b54bde 100644
+--- a/core/java/android/hardware/camera2/CameraDevice.java
++++ b/core/java/android/hardware/camera2/CameraDevice.java
+@@ -1409,6 +1409,10 @@ public abstract CaptureRequest.Builder createReprocessCaptureRequest(
+     @Override
+     public abstract void close();
+ 
++    /** @hide */
++    public abstract void setVendorStreamConfigMode(int index)
++            throws CameraAccessException;
++
+     /**
+      * Checks whether a particular {@link SessionConfiguration} is supported by the camera device.
+      *
+diff --git a/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java b/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
+index c0640359c8481..eb8dc5f4b6a21 100644
+--- a/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
++++ b/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
+@@ -132,6 +132,8 @@ public Thread newThread(Runnable r) {
+     @EnabledSince(targetSdkVersion = Build.VERSION_CODES.VANILLA_ICE_CREAM)
+     static final long CHECK_PARAMS_IN_IS_SESSION_CONFIGURATION_SUPPORTED = 320741775;
+ 
++    private int customOpMode = 0;
++
+     // TODO: guard every function with if (!mRemoteDevice) check (if it was closed)
+     private ICameraDeviceUserWrapper mRemoteDevice;
+     private boolean mRemoteDeviceInit = false;
+@@ -583,6 +585,10 @@ public void run() {
+         }
+     }
+ 
++    public void setVendorStreamConfigMode(int fpsrange) {
++        customOpMode = fpsrange;
++    }
++
+     @Override
+     public String getId() {
+         return mCameraId;
+@@ -712,6 +718,7 @@ public boolean configureStreamsChecked(InputConfiguration inputConfig,
+                                     new OutputConfiguration(outConfig) : outConfig);
+                         }
+                     }
++                    operatingMode = (operatingMode | (customOpMode << 16));
+ 
+                     if (sessionParams != null) {
+                         offlineStreamIds = mRemoteDevice.endConfigure(operatingMode,
