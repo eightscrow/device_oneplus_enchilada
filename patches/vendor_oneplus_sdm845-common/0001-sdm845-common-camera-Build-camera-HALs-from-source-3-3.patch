@@ -1,0 +1,129 @@
+From 2a53fa9b3db549775d945473f69f8851864866da Mon Sep 17 00:00:00 2001
+From: Terminator-J <terminator_j@hotbutteredmonkey.com>
+Date: Sat, 15 Mar 2025 20:59:07 -0700
+Subject: [PATCH] sdm845-common: camera: Build camera HALs from source [3/3]
+
+Drop vendor.oneplus.hardware.camera@1.0 and vendor.oneplus.hardware.CameraMDMHIDL@1.0 blobs,
+build from source in hardware/oneplus instead.
+
+Needed for being able to allow properly unlocking hardware capabilities via injecting client package name in cmaeraservice.
+
+(cherry picked from commit 6770382abf5a9c44f4fe73563f4860af679ff4a9)
+[eightscrow: keep the three unreferenced blob files in the checkout; only the build description changes]
+---
+ Android.bp              | 71 -----------------------------------------
+ sdm845-common-vendor.mk |  2 --
+ 2 files changed, 73 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 9cde360..728e81b 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -3322,49 +3322,6 @@ cc_prebuilt_library_shared {
+     soc_specific: true,
+ }
+ 
+-cc_prebuilt_library_shared {
+-    name: "vendor.oneplus.hardware.camera@1.0",
+-    owner: "oneplus",
+-    strip: {
+-        none: true,
+-    },
+-    target: {
+-        android_arm: {
+-            srcs: [
+-                "proprietary/vendor/lib/vendor.oneplus.hardware.camera@1.0.so",
+-            ],
+-            shared_libs: [
+-                "libhidlbase",
+-                "liblog",
+-                "libutils",
+-                "libcutils",
+-                "libc++",
+-                "libc",
+-                "libm",
+-                "libdl",
+-            ],
+-        },
+-        android_arm64: {
+-            srcs: [
+-                "proprietary/vendor/lib64/vendor.oneplus.hardware.camera@1.0.so",
+-            ],
+-            shared_libs: [
+-                "libhidlbase",
+-                "liblog",
+-                "libutils",
+-                "libcutils",
+-                "libc++",
+-                "libc",
+-                "libm",
+-                "libdl",
+-            ],
+-        },
+-    },
+-    compile_multilib: "both",
+-    prefer: true,
+-    soc_specific: true,
+-}
+-
+ cc_prebuilt_library_shared {
+     name: "vendor.oneplus.hardware.param@1.0",
+     owner: "oneplus",
+@@ -12279,34 +12236,6 @@ cc_prebuilt_library_shared {
+     soc_specific: true,
+ }
+ 
+-cc_prebuilt_library_shared {
+-    name: "vendor.oneplus.hardware.CameraMDMHIDL@1.0",
+-    owner: "oneplus",
+-    strip: {
+-        none: true,
+-    },
+-    target: {
+-        android_arm64: {
+-            srcs: [
+-                "proprietary/vendor/lib64/vendor.oneplus.hardware.CameraMDMHIDL@1.0.so",
+-            ],
+-            shared_libs: [
+-                "libhidlbase",
+-                "liblog",
+-                "libutils",
+-                "libcutils",
+-                "libc++",
+-                "libc",
+-                "libm",
+-                "libdl",
+-            ],
+-        },
+-    },
+-    compile_multilib: "64",
+-    prefer: true,
+-    soc_specific: true,
+-}
+-
+ cc_prebuilt_library_shared {
+     name: "vendor.oneplus.hardware.hdcpkey@1.0",
+     owner: "oneplus",
+diff --git a/sdm845-common-vendor.mk b/sdm845-common-vendor.mk
+index cacc325..bb4b499 100644
+--- a/sdm845-common-vendor.mk
++++ b/sdm845-common-vendor.mk
+@@ -394,7 +394,6 @@ PRODUCT_PACKAGES += \
+     libvpphvx \
+     libvpplibrary \
+     libxml \
+-    vendor.oneplus.hardware.camera@1.0 \
+     vendor.oneplus.hardware.param@1.0 \
+     vendor.qti.hardware.bluetooth_sar@1.0 \
+     vendor.qti.hardware.bluetooth_sar@1.1 \
+@@ -694,7 +693,6 @@ PRODUCT_PACKAGES += \
+     vendor.display.color@1.4 \
+     vendor.display.color@1.5 \
+     vendor.display.postproc@1.0 \
+-    vendor.oneplus.hardware.CameraMDMHIDL@1.0 \
+     vendor.oneplus.hardware.hdcpkey@1.0 \
+     vendor.oneplus.hardware.ifaa@2.0 \
+     vendor.qti.data.factory@2.0 \
+-- 
+2.56.0
+
