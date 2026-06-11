@@ -1,0 +1,22 @@
+From 6cbdeff9460c70a796474b8f872a909a28f3a5c1 Mon Sep 17 00:00:00 2001
+From: awa <2172245494@qq.com>
+Date: Thu, 11 Jun 2026 13:26:30 +0800
+Subject: [PATCH] doze: Use wakeUp instead of wakeUpWithProximityCheck
+
+---
+ packages/Doze/src/org/lineageos/settings/doze/PickupSensor.kt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/packages/Doze/src/org/lineageos/settings/doze/PickupSensor.kt b/packages/Doze/src/org/lineageos/settings/doze/PickupSensor.kt
+index 6754815..c7c213e 100644
+--- a/packages/Doze/src/org/lineageos/settings/doze/PickupSensor.kt
++++ b/packages/Doze/src/org/lineageos/settings/doze/PickupSensor.kt
+@@ -40,7 +40,7 @@ class PickupSensor(
+         if (event.values[0] == sensorValue) {
+             if (Utils.isPickUpSetToWake(context)) {
+                 wakeLock.acquire(WAKELOCK_TIMEOUT_MS)
+-                powerManager.wakeUpWithProximityCheck(
++                powerManager.wakeUp(
+                     SystemClock.uptimeMillis(),
+                     PowerManager.WAKE_REASON_GESTURE,
+                     TAG,
