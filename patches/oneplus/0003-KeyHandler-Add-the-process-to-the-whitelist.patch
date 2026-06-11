@@ -1,0 +1,24 @@
+From 1491bd7c03e831d0df90e00377ade708f32888ab Mon Sep 17 00:00:00 2001
+From: awa <2172245494@qq.com>
+Date: Thu, 11 Jun 2026 13:29:33 +0800
+Subject: [PATCH] KeyHandler: Add the process to the whitelist
+
+The KeyHandler was frozen due to the error "ActivityManager: sync unfroze 9701 org.lineageos.settings.device for 3", so it was added to the whitelist.
+---
+ packages/KeyHandler/AndroidManifest.xml | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/packages/KeyHandler/AndroidManifest.xml b/packages/KeyHandler/AndroidManifest.xml
+index 458ac79..df57169 100644
+--- a/packages/KeyHandler/AndroidManifest.xml
++++ b/packages/KeyHandler/AndroidManifest.xml
+@@ -29,7 +29,8 @@
+         android:label="@string/device_settings_app_name"
+         android:theme="@style/Theme.SubSettingsBase.Expressive"
+         android:defaultToDeviceProtectedStorage="true"
+-        android:directBootAware="true">
++        android:directBootAware="true"
++        android:persistent="true">
+ 
+         <receiver
+             android:name="org.lineageos.settings.device.BootCompletedReceiver"
