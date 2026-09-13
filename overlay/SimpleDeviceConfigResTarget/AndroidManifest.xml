@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-FileCopyrightText: 2026 eightscrow -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.protonaosp.deviceconfig.enchilada">
+    <overlay
+        android:isStatic="true"
+        android:priority="999"
+        android:targetPackage="org.protonaosp.deviceconfig" />
+</manifest>

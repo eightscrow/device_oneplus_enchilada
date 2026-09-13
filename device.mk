@@ -35,6 +35,7 @@ PRODUCT_PACKAGES += \
     FrameworksResTarget \
     NoCutoutOverlay \
     SettingsProviderResTarget \
+    SimpleDeviceConfigResTarget \
     SystemUIResTarget \
     WifiResTarget
 
