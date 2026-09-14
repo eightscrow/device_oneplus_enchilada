@@ -13,12 +13,16 @@ from extract_utils.main import (
     ExtractUtilsModule,
 )
 
+from keymaster_fixup import fixup_keymaster
+
 namespace_imports = [
     'hardware/oneplus',
     'vendor/oneplus/sdm845-common',
 ]
 
 blob_fixups: blob_fixups_user_type = {
+    'vendor/lib64/hw/android.hardware.keymaster@3.0-impl-qti.so': blob_fixup()
+        .call(fixup_keymaster, need_tmp_dir=False),
     'vendor/etc/init/android.hardware.biometrics.fingerprint@2.1-service.oneplus.rc': blob_fixup()
         .regex_replace('@2.1-service\n', '@2.1-service.oneplus\n'),
 }  # fmt: skip
