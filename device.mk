@@ -37,6 +37,7 @@ PRODUCT_PACKAGES += \
     SettingsProviderResTarget \
     SettingsResTarget \
     SimpleDeviceConfigResTarget \
+    SystemUIPluginResTarget \
     SystemUIResTarget \
     WifiResTarget
 
