@@ -1,0 +1,16 @@
+From 81a82daa39f2e3816e6f5c5119374dbe5a92e62d Mon Sep 17 00:00:00 2001
+From: eightscrow <183341520+eightscrow@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 08:25:30 +0300
+Subject: [PATCH] SystemUI: Synchronize notification background keyguard state
+
+
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/notification/row/ActivatableNotificationView.java b/packages/SystemUI/src/com/android/systemui/statusbar/notification/row/ActivatableNotificationView.java
+index 85e134a7b0caee1a12e8851451c2a50d0366e4f2..a5d189f003c2b422821ccc8dee170cad44a3c539 100644
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/notification/row/ActivatableNotificationView.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/notification/row/ActivatableNotificationView.java
+@@ -218,4 +218,5 @@ public abstract class ActivatableNotificationView extends ExpandableOutlineView
+     protected void initBackground() {
+         mBackgroundNormal.setCustomBackground(R.drawable.notification_material_bg);
++        mBackgroundNormal.setOnKeyguard(mOnKeyguard);
+         mBackgroundNormal.setBlurBackgroundEnabled(usesBlurredBackground());
+     }
