@@ -79,10 +79,10 @@ git -C vendor/voltage am ../../device/oneplus/enchilada/patches/vendor_voltage/0
 ## WebView
 
 The accompanying arm64 WebView pin is
-`11fd8afe58c011d04cb3c1b2259f406ec9fd49f2` (153.0.8010.36) in
+`394b243c2796e36580dd8bae7822609e1c01b1ff` (154.0.8037.57) in
 [LineageOS/android_external_chromium-webview_prebuilt_arm64](https://github.com/LineageOS/android_external_chromium-webview_prebuilt_arm64).
 Materialize its Git LFS APK. The object SHA-256 is
-`757ac9efd780727fcab6006560ee1368950d42b88a4b84d2da70edc9ebd438f7`.
+`3b98460ccd41b2a1851c5a46e6dec6f86f1d14302ff2fa4deeb1d781e32f89a4`.
 
 ## HDR ratio reporting without HBM
 
