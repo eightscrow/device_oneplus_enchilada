@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<displayConfiguration>
+    <name>OnePlus 6</name>
+    <!-- Keep the existing resource-based panel/auto-brightness calibration.
+         HDR uses at most 2x SDR luminance, capped at the normal brightness limit.
+         This is a boost policy, not a new panel calibration or HBM mode. -->
+    <hdrBrightnessConfig>
+        <brightnessMap>
+            <point><first>0</first><second>1.0</second></point>
+        </brightnessMap>
+        <brightnessIncreaseDebounceMillis>1000</brightnessIncreaseDebounceMillis>
+        <screenBrightnessRampIncrease>0.2</screenBrightnessRampIncrease>
+        <brightnessDecreaseDebounceMillis>1000</brightnessDecreaseDebounceMillis>
+        <screenBrightnessRampDecrease>0.2</screenBrightnessRampDecrease>
+        <minimumHdrPercentOfScreenForNbm>0.2</minimumHdrPercentOfScreenForNbm>
+        <minimumHdrPercentOfScreenForHbm>0.5</minimumHdrPercentOfScreenForHbm>
+        <allowInLowPowerMode>false</allowInLowPowerMode>
+        <sdrHdrRatioMap>
+            <point><first>0</first><second>2.0</second></point>
+            <point><first>427.6287</first><second>2.0</second></point>
+        </sdrHdrRatioMap>
+    </hdrBrightnessConfig>
+</displayConfiguration>

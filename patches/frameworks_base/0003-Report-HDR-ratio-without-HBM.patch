@@ -1,0 +1,51 @@
+diff --git a/services/core/java/com/android/server/display/DisplayDeviceConfig.java b/services/core/java/com/android/server/display/DisplayDeviceConfig.java
+index f25b593c2..aa121be86 100644
+--- a/services/core/java/com/android/server/display/DisplayDeviceConfig.java
++++ b/services/core/java/com/android/server/display/DisplayDeviceConfig.java
+@@ -1276,7 +1276,9 @@ public class DisplayDeviceConfig {
+      * @return true if there is sdrHdrRatioMap, false otherwise.
+      */
+     public boolean hasSdrToHdrRatioSpline() {
+-        return mHbmData != null && mHbmData.sdrToHdrRatioSpline != null;
++        return (mHbmData != null && mHbmData.sdrToHdrRatioSpline != null)
++                || (mHdrBrightnessData != null
++                        && mHdrBrightnessData.sdrToHdrRatioSpline != null);
+     }
+ 
+     /**
+diff --git a/services/tests/displayservicetests/src/com/android/server/display/DisplayDeviceConfigTest.java b/services/tests/displayservicetests/src/com/android/server/display/DisplayDeviceConfigTest.java
+index b36ccf133..47588e352 100644
+--- a/services/tests/displayservicetests/src/com/android/server/display/DisplayDeviceConfigTest.java
++++ b/services/tests/displayservicetests/src/com/android/server/display/DisplayDeviceConfigTest.java
+@@ -771,6 +771,31 @@ public final class DisplayDeviceConfigTest {
+         assertEquals(0.6f, data.maxBrightnessLimits.get(1200f), SMALL_DELTA);
+     }
+ 
++    @Test
++    public void testHdrRatioAvailableWithoutHighBrightnessMode() throws IOException {
++        String content = getContent()
++                .replaceAll("(?s)<highBrightnessMode.*?</highBrightnessMode>", "")
++                .replace("</hdrBrightnessConfig>",
++                        "<sdrHdrRatioMap>"
++                                + "<point><first>0</first><second>2</second></point>"
++                                + "<point><first>1000</first><second>2</second></point>"
++                                + "</sdrHdrRatioMap></hdrBrightnessConfig>");
++        setupDisplayDeviceConfigFromDisplayConfigFile(content);
++
++        assertNotNull(mDisplayDeviceConfig.getHdrBrightnessData().sdrToHdrRatioSpline);
++        assertTrue(mDisplayDeviceConfig.hasSdrToHdrRatioSpline());
++    }
++
++    @Test
++    public void testHdrRatioUnavailableWithoutEitherBrightnessMap() throws IOException {
++        String content = getContent()
++                .replaceAll("(?s)<highBrightnessMode.*?</highBrightnessMode>", "");
++        setupDisplayDeviceConfigFromDisplayConfigFile(content);
++
++        assertNull(mDisplayDeviceConfig.getHdrBrightnessData().sdrToHdrRatioSpline);
++        assertFalse(mDisplayDeviceConfig.hasSdrToHdrRatioSpline());
++    }
++
+     private void verifyConfigValuesFromConfigResource() {
+         assertNull(mDisplayDeviceConfig.getName());
+         assertArrayEquals(mDisplayDeviceConfig.getAutoBrightnessBrighteningLevelsNits(),

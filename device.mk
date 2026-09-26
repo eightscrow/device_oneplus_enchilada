@@ -80,3 +80,10 @@ $(call inherit-product, device/oneplus/sdm845-common/common.mk)
 
 # Inherit from vendor blobs
 $(call inherit-product, vendor/oneplus/enchilada/enchilada-vendor.mk)
+
+# Native HDR brightness control on the legacy composer.
+PRODUCT_SYSTEM_PROPERTIES += \
+    debug.sf.legacy_hdr_brightness=true
+
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/display/display_port_129.xml:$(TARGET_COPY_OUT_VENDOR)/etc/displayconfig/display_port_129.xml

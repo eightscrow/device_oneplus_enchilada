@@ -1,0 +1,61 @@
+--- a/services/surfaceflinger/SurfaceFlinger.cpp
++++ b/services/surfaceflinger/SurfaceFlinger.cpp
+@@ -2424,12 +2424,25 @@
+                        }
+                        return ftl::yield<status_t>(OK);
+                    } else {
+-                       return getHwComposer()
+-                               .setDisplayBrightness(display->getPhysicalId(),
+-                                                     brightness.displayBrightness,
+-                                                     brightness.displayBrightnessNits,
+-                                                     Hwc2::Composer::DisplayBrightnessOptions{
+-                                                             .applyImmediately = true});
++                       auto result = getHwComposer().setDisplayBrightness(
++                               display->getPhysicalId(), brightness.displayBrightness,
++                               brightness.displayBrightnessNits,
++                               Hwc2::Composer::DisplayBrightnessOptions{.applyImmediately = true});
++                       static const bool legacyHdrBrightness =
++                               base::GetBoolProperty("debug.sf.legacy_hdr_brightness", false);
++                       if (!legacyHdrBrightness) {
++                           return result;
++                       }
++                       const status_t error = result.get();
++                       if (error == NO_ERROR) {
++                           // Legacy HWC applies backlight immediately. Keep RenderEngine's
++                           // luminance state in sync; boosted frames must use client composition.
++                           display->getCompositionDisplay()
++                                   ->setDisplayBrightness(brightness.sdrWhitePointNits,
++                                                          brightness.displayBrightnessNits);
++                           scheduleComposite(FrameHint::kNone);
++                       }
++                       return ftl::yield<status_t>(error);
+                    }
+                } else {
+                    SFTRACE_FORMAT("%s (invalid display token) %s", whence,
+--- a/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/OutputLayer.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include <DisplayHardware/Hal.h>
+ #include <aidl/android/hardware/graphics/composer3/LutProperties.h>
++#include <android-base/properties.h>
+ #include <android-base/stringprintf.h>
+ #include <common/trace.h>
+ #include <compositionengine/DisplayColorProfile.h>
+@@ -1186,7 +1187,15 @@
+ }
+ 
+ bool OutputLayer::isClientCompositionForced(bool isPeekingThrough) const {
+-    return getState().forceClientComposition ||
++    static const bool legacyHdrBrightness =
++            base::GetBoolProperty("debug.sf.legacy_hdr_brightness", false);
++    const auto& outputState = getOutput().getState();
++    const bool requiresClientDimming = legacyHdrBrightness &&
++            outputState.sdrWhitePointNits > 0.f &&
++            outputState.displayBrightnessNits > outputState.sdrWhitePointNits;
++    // HIDL cannot dim layers. Evaluate this every frame so leaving HDR does not
++    // keep forcing GPU composition until the next geometry update.
++    return requiresClientDimming || getState().forceClientComposition ||
+             (!isPeekingThrough && getLayerFE().hasRoundedCorners());
+ }
+ 

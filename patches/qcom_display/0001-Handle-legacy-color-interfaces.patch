@@ -1,0 +1,159 @@
+diff --git a/composer/hwc_display.cpp b/composer/hwc_display.cpp
+index 24bcb34..64fa8d0 100644
+--- a/composer/hwc_display.cpp
++++ b/composer/hwc_display.cpp
+@@ -183,13 +183,12 @@ HWC2::Error HWCColorMode::ApplyCurrentColorModeWithRenderIntent(bool hdr_present
+       return HWC2::Error::None;
+   }
+ 
+-  apply_mode_ = false;
+-  curr_dynamic_range_ = (hdr_present)? kHdrType : kSdrType;
++  const auto dynamic_range = hdr_present ? kHdrType : kSdrType;
+ 
+   // select mode according to the blend space and dynamic range
+-  std::string mode_string = preferred_mode_[current_color_mode_][curr_dynamic_range_];
++  std::string mode_string = preferred_mode_[current_color_mode_][dynamic_range];
+   if (mode_string.empty()) {
+-    mode_string = color_mode_map_[current_color_mode_][current_render_intent_][curr_dynamic_range_];
++    mode_string = color_mode_map_[current_color_mode_][current_render_intent_][dynamic_range];
+     if (mode_string.empty() && hdr_present) {
+       // Use the colorimetric HDR mode, if an HDR mode with the current render intent is not present
+       mode_string = color_mode_map_[current_color_mode_][RenderIntent::COLORIMETRIC][kHdrType];
+@@ -197,27 +196,33 @@ HWC2::Error HWCColorMode::ApplyCurrentColorModeWithRenderIntent(bool hdr_present
+     if (mode_string.empty() &&
+        (current_color_mode_ == ColorMode::DISPLAY_P3 ||
+        current_color_mode_ == ColorMode::DISPLAY_BT2020) &&
+-       curr_dynamic_range_ == kHdrType) {
++       dynamic_range == kHdrType) {
+       // fall back to display_p3/display_bt2020 SDR mode if there is no HDR mode
+       mode_string = color_mode_map_[current_color_mode_][current_render_intent_][kSdrType];
+     }
+ 
+     if (mode_string.empty() &&
+-       (current_color_mode_ == ColorMode::BT2100_PQ) && (curr_dynamic_range_ == kSdrType)) {
++       (current_color_mode_ == ColorMode::BT2100_PQ ||
++        current_color_mode_ == ColorMode::BT2100_HLG) && (dynamic_range == kSdrType)) {
+       // fallback to hdr mode.
+       mode_string = color_mode_map_[current_color_mode_][current_render_intent_][kHdrType];
+-      DLOGI("fall back to hdr mode for ColorMode::BT2100_PQ kSdrType");
++      DLOGI("fall back to hdr mode for HDR transfer in SDR composition");
+     }
+   }
+ 
+   auto error = SetPreferredColorModeInternal(mode_string, false, NULL, NULL);
+   if (error == HWC2::Error::None) {
+     // The mode does not have the PCC configured, restore the transform
+-    RestoreColorTransform();
++    error = RestoreColorTransform();
+     DLOGV_IF(kTagClient, "Successfully applied mode = %d intent = %d range = %d name = %s",
+-             current_color_mode_, current_render_intent_, curr_dynamic_range_, mode_string.c_str());
++             current_color_mode_, current_render_intent_, dynamic_range, mode_string.c_str());
+   }
+ 
++  // Do not cache failed mode or transform writes as successfully applied.
++  apply_mode_ = error != HWC2::Error::None;
++  if (!apply_mode_) {
++    curr_dynamic_range_ = dynamic_range;
++  }
+   return error;
+ }
+ 
+@@ -350,6 +355,12 @@ void HWCColorMode::PopulateColorModes() {
+ 
+   std::vector<std::string> color_modes(color_mode_count);
+   error = display_intf_->GetColorModes(&color_mode_count, &color_modes);
++  const auto has_mode = [&color_modes](const char *name) {
++    return std::find(color_modes.begin(), color_modes.end(), name) != color_modes.end();
++  };
++  const bool legacy_profiles = has_mode("zhal_native") && has_mode("SRGB") &&
++                               has_mode("DCI_P3") && has_mode("bt2020_pq") &&
++                               has_mode("bt2020_hlg");
+   for (uint32_t i = 0; i < color_mode_count; i++) {
+     std::string &mode_string = color_modes.at(i);
+     DLOGV_IF(kTagClient, "Color Mode[%d] = %s", i, mode_string.c_str());
+@@ -381,6 +392,20 @@ void HWCColorMode::PopulateColorModes() {
+                pic_quality.c_str(), int_render_intent);
+ 
+       auto render_intent = static_cast<RenderIntent>(int_render_intent);
++      if (legacy_profiles) {
++        if (render_intent != RenderIntent::COLORIMETRIC) {
++          continue;
++        }
++        // LiveDisplay controls the panel gamut. Restore an actual native SDR
++        // profile after HDR; zhal_native contains calibrated sRGB/P3 processing
++        // despite its name and must not be relabeled as native.
++        const bool native_sdr = color_gamut == kNative && dynamic_range == kSdr &&
++                                pic_quality == kStandard;
++        if (!native_sdr && mode_string != "bt2020_pq" && mode_string != "bt2020_hlg") {
++          continue;
++        }
++        // Only the explicit PQ/HLG profiles participate in HDR composition.
++      }
+       if (color_gamut == kNative) {
+         color_mode_map_[ColorMode::NATIVE][render_intent][kSdrType] = mode_string;
+       }
+diff --git a/sdm/libs/core/color_manager.cpp b/sdm/libs/core/color_manager.cpp
+index 671fdea..de8ba49 100644
+--- a/sdm/libs/core/color_manager.cpp
++++ b/sdm/libs/core/color_manager.cpp
+@@ -394,29 +394,54 @@ void PPHWAttributes::Set(const HWResourceInfo &hw_res,
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrGetNumOfModes(uint32_t *mode_cnt) {
+-  return color_intf_->ColorIntfGetNumDisplayModes(&pp_features_, 0, mode_cnt);
++  return color_intf_->ColorIntfGetNumDisplayModes(&pp_features_, display_id_, mode_cnt);
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrGetModes(uint32_t *mode_cnt,
+                                                  SDEDisplayMode *modes) {
+-  return color_intf_->ColorIntfEnumerateDisplayModes(&pp_features_, 0, modes, mode_cnt);
++  return color_intf_->ColorIntfEnumerateDisplayModes(&pp_features_, display_id_, modes, mode_cnt);
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrSetMode(int32_t color_mode_id) {
+-  return color_intf_->ColorIntfSetDisplayMode(&pp_features_, 0, color_mode_id);
++  return color_intf_->ColorIntfSetDisplayMode(&pp_features_, display_id_, color_mode_id);
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrGetModeInfo(int32_t mode_id, AttrVal *query) {
+-  return color_intf_->ColorIntfGetModeInfo(&pp_features_, 0, mode_id, query);
++  DisplayError error = color_intf_->ColorIntfGetModeInfo(&pp_features_, display_id_, mode_id, query);
++  if (error != kErrorNone || !query || query->empty()) {
++    return error;
++  }
++
++  // Legacy color libraries describe the rendering intent through PictureQuality.
++  // Normalize their missing/-1 intent before HWC and SDM validate the attributes.
++  std::string picture_quality;
++  std::string *render_intent = nullptr;
++  for (auto &attribute : *query) {
++    if (attribute.first == kPictureQualityAttribute) {
++      picture_quality = attribute.second;
++    } else if (attribute.first == kRenderIntentAttribute) {
++      render_intent = &attribute.second;
++    }
++  }
++  if ((!render_intent || *render_intent == "-1") &&
++      (picture_quality == kStandard || picture_quality == kEnhanced)) {
++    const std::string intent = picture_quality == kStandard ? "0" : "1";
++    if (render_intent) {
++      *render_intent = intent;
++    } else {
++      query->emplace_back(kRenderIntentAttribute, intent);
++    }
++  }
++  return error;
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrSetColorTransform(uint32_t length,
+                                                           const double *trans_data) {
+-  return color_intf_->ColorIntfSetColorTransform(&pp_features_, 0, length, trans_data);
++  return color_intf_->ColorIntfSetColorTransform(&pp_features_, display_id_, length, trans_data);
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrGetDefaultModeID(int32_t *mode_id) {
+-  return color_intf_->ColorIntfGetDefaultModeID(&pp_features_, 0, mode_id);
++  return color_intf_->ColorIntfGetDefaultModeID(&pp_features_, display_id_, mode_id);
+ }
+ 
+ DisplayError ColorManagerProxy::ColorMgrCombineColorModes() {
