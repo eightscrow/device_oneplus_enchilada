@@ -1,0 +1,123 @@
+--- a/packages/SystemUI/src/com/android/systemui/doze/DozeSensors.java
++++ b/packages/SystemUI/src/com/android/systemui/doze/DozeSensors.java
+@@ -29,6 +29,8 @@
+ import android.database.ContentObserver;
+ import android.hardware.Sensor;
+ import android.hardware.SensorManager;
++import android.hardware.SensorEvent;
++import android.hardware.SensorEventListener;
+ import android.hardware.TriggerEvent;
+ import android.hardware.TriggerEventListener;
+ import android.hardware.biometrics.BiometricAuthenticator;
+@@ -194,19 +196,7 @@
+                         false /* touchCoords */,
+                         false /* touchscreen */
+                 ),
+-                new TriggerSensor(
+-                        mSensorManager.getDefaultSensor(Sensor.TYPE_PICK_UP_GESTURE),
+-                        Settings.Secure.DOZE_PICK_UP_GESTURE,
+-                        resources.getBoolean(
+-                                R.bool.config_dozePickupGestureEnabled) /* settingDef */,
+-                        config.dozePickupSensorAvailable(),
+-                        DozeLog.REASON_SENSOR_PICKUP, false /* touchCoords */,
+-                        false /* touchscreen */,
+-                        false /* ignoresSetting */,
+-                        false /* requires prox */,
+-                        true /* immediatelyReRegister */,
+-                        false /* requiresAod */
+-                ),
++                createPickupSensor(resources, config),
+                 new TriggerSensor(
+                         findSensor(config.doubleTapSensorType()),
+                         Settings.Secure.DOZE_DOUBLE_TAP_GESTURE,
+@@ -304,6 +294,81 @@
+         mDevicePostureController.addCallback(mDevicePostureCallback);
+     }
+ 
++    private TriggerSensor createPickupSensor(Resources resources,
++            AmbientDisplayConfiguration config) {
++        final Sensor sensor = findSensor(resources.getString(
++                com.android.systemui.res.R.string.doze_pickup_sensor_type));
++        if (sensor != null && sensor.isWakeUpSensor()
++                && sensor.getReportingMode() == Sensor.REPORTING_MODE_ON_CHANGE) {
++            return new PickupSensor(sensor, resources, config);
++        }
++        return new TriggerSensor(
++                        mSensorManager.getDefaultSensor(Sensor.TYPE_PICK_UP_GESTURE),
++                        Settings.Secure.DOZE_PICK_UP_GESTURE,
++                        resources.getBoolean(
++                                R.bool.config_dozePickupGestureEnabled) /* settingDef */,
++                        config.dozePickupSensorAvailable(),
++                        DozeLog.REASON_SENSOR_PICKUP, false /* touchCoords */,
++                        false /* touchscreen */,
++                        false /* ignoresSetting */,
++                        false /* requires prox */,
++                        true /* immediatelyReRegister */,
++                        false /* requiresAod */
++                );
++    }
++
++    /** Adapts an OEM on-change pickup sensor to the standard pickup setting. */
++    private class PickupSensor extends TriggerSensor implements SensorEventListener {
++        private static final long PICKUP_DEBOUNCE_MS = 2500;
++        private long mLastPickup;
++
++        PickupSensor(Sensor sensor, Resources resources, AmbientDisplayConfiguration config) {
++            super(sensor, Settings.Secure.DOZE_PICK_UP_GESTURE,
++                    resources.getBoolean(R.bool.config_dozePickupGestureEnabled),
++                    config.dozePickupSensorAvailable(), DozeLog.REASON_SENSOR_PICKUP,
++                    false /* touchCoords */, false /* touchscreen */, false /* ignoresSetting */,
++                    false /* requiresProx */, false /* performsProxCheck */,
++                    false /* immediatelyReRegister */, false /* requiresAod */);
++        }
++
++        @Override
++        public void updateListening() {
++            if (!mConfigured || mSensors[0] == null) return;
++            if (mRequested && !mDisabled && (enabledBySetting() || mIgnoresSetting)) {
++                if (!mRegistered) {
++                    mLastPickup = SystemClock.elapsedRealtime();
++                    mRegistered = mSensorManager.registerListener(this, mSensors[0],
++                            SensorManager.SENSOR_DELAY_NORMAL, mHandler);
++                    mDozeLog.traceSensorRegisterAttempt(mSensors[0].toString(), mRegistered);
++                }
++            } else if (mRegistered) {
++                mSensorManager.unregisterListener(this, mSensors[0]);
++                mRegistered = false;
++                mDozeLog.traceSensorUnregisterAttempt(mSensors[0].toString(), true);
++            }
++        }
++
++        @Override
++        public void onSensorChanged(SensorEvent event) {
++            if (!mRegistered || !mRequested || mDisabled || !enabledBySetting()
++                    || event.values.length == 0 || event.values[0] != 1.f) return;
++            final long now = SystemClock.elapsedRealtime();
++            if (now - mLastPickup < PICKUP_DEBOUNCE_MS) return;
++            mLastPickup = now;
++            final float[] values = event.values.clone();
++            mHandler.post(mWakeLock.wrap(() -> {
++                if (!mRegistered || !mRequested || mDisabled || !enabledBySetting()) return;
++                mDozeLog.traceSensor(mPulseReason);
++                UI_EVENT_LOGGER.log(DozeSensorsUiEvent.ACTION_AMBIENT_GESTURE_PICKUP);
++                // The OEM event does not establish that proximity is clear.
++                mSensorCallback.onSensorPulse(mPulseReason, false, -1, -1, values);
++            }));
++        }
++
++        @Override
++        public void onAccuracyChanged(Sensor sensor, int accuracy) {}
++    }
++
+     private boolean udfpsLongPressConfigured() {
+         return mUdfpsEnrolled
+                 && (mConfig.alwaysOnEnabled(mSelectedUserInteractor.getSelectedUserId())
+--- a/packages/SystemUI/res/values/config.xml
++++ b/packages/SystemUI/res/values/config.xml
+@@ -1253,4 +1253,6 @@
+     Indicates whether to use the Alerts channel for storage notifications.
+     -->
+     <bool name="config_storageNotificationsUseAlertsChannel">false</bool>
++    <!-- Optional OEM on-change pickup sensor; empty keeps the standard sensor. -->
++    <string name="doze_pickup_sensor_type" translatable="false"></string>
+ </resources>

@@ -50,6 +50,20 @@ normal brightness range. It reuses the panel brightness and automatic-brightness
 resources and does not enable a new HBM mode. The standard HDR brightness toggle
 and slider use Android's normal capability checks.
 
+## Native pickup gesture
+
+After the notification patch, apply the pickup adapter to the same framework base:
+
+```sh
+git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0002-Support-OEM-pickup-sensors.patch
+```
+
+This connects the OEM on-change pickup sensor to SystemUI's existing per-user
+pickup setting and proximity checks. The device selects `oneplus.sensor.pickup`
+and exposes the existing Gestures and Lock screen settings. Pickup is disabled
+by default; the existing ambient/full-wake choice is retained. No additional
+sensor-polling service is required.
+
 ## HDR ratio reporting without HBM
 
 Apply to the same framework base:
