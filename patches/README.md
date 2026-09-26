@@ -24,3 +24,47 @@ git -C frameworks/base am ../../device/oneplus/enchilada/patches/frameworks_base
 Do not reapply a patch that is already present. Keep the manifest pinned to the
 public upstream revision; preserve local commits or patches before syncing again.
 No framework fork is required.
+
+## Legacy display color and HDR brightness
+
+Use [LineageOS/android_hardware_qcom_display](https://github.com/LineageOS/android_hardware_qcom_display)
+at `9ec8cc08004bcf005fe5c174522e1f395d3f5888` for the sm8250 display path and
+[VoltageOS/frameworks_native](https://github.com/VoltageOS/frameworks_native)
+at `fad0dc514dc08ff93c5badd7e05dc92f4b3c9db1`.
+
+```sh
+git -C hardware/qcom-caf/sm8250/display apply ../../../../device/oneplus/enchilada/patches/qcom_display/0001-Handle-legacy-color-interfaces.patch
+git -C frameworks/native apply ../../device/oneplus/enchilada/patches/frameworks_native/0001-Support-legacy-HDR-brightness.patch
+```
+
+The color patch preserves the display ID used by the legacy color library and
+normalizes legacy render-intent metadata. The brightness patch propagates
+successful HIDL backlight updates into composition luminance. HIDL cannot dim
+individual layers, so boosted frames use GPU composition to preserve SDR white.
+The device opts in through `debug.sf.legacy_hdr_brightness`; other devices retain
+the existing default path. HIDL backlight updates remain non-atomic with frame
+composition.
+
+The display configuration caps HDR boost at 2x SDR luminance within the existing
+normal brightness range. It reuses the panel brightness and automatic-brightness
+resources and does not enable a new HBM mode. The standard HDR brightness toggle
+and slider use Android's normal capability checks.
+
+## HDR ratio reporting without HBM
+
+Apply to the same framework base:
+
+```sh
+git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0003-Report-HDR-ratio-without-HBM.patch
+```
+
+This allows the display service to report HDR/SDR luminance ratios when the ratio
+curve is supplied by HDR brightness configuration without enabling HBM. The
+Settings capability check is unchanged. For the legacy OnePlus profile family,
+the color patch preserves native SDR composition and the panel gamut selection
+provided by LiveDisplay, while advertising explicit PQ and HLG profiles for HDR.
+Adjustment profiles cannot overwrite those mappings during enumeration.
+
+Native SDR profiles are selected from their color-gamut and dynamic-range
+attributes. The legacy `zhal_native` profile contains calibrated color
+processing and is not treated as a native bypass based on its name.
