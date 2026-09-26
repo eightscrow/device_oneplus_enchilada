@@ -64,6 +64,26 @@ and exposes the existing Gestures and Lock screen settings. Pickup is disabled
 by default; the existing ambient/full-wake choice is retained. No additional
 sensor-polling service is required.
 
+## GameSpace package references
+
+Use [VoltageOS/vendor_voltage](https://github.com/VoltageOS/vendor_voltage)
+at `9b9effaa73d8571fca253f4545fc6f154069a3d3` with the isolated upstream change
+`02f2c7f74a8a7bce90766828f7c11061ededb964` by Frost. The supplied format-patch
+preserves its original commit, author and message. It changes the two package
+references only.
+
+```sh
+git -C vendor/voltage am ../../device/oneplus/enchilada/patches/vendor_voltage/0001-Correct-the-GameSpace-package-name.patch
+```
+
+## WebView
+
+The accompanying arm64 WebView pin is
+`11fd8afe58c011d04cb3c1b2259f406ec9fd49f2` (153.0.8010.36) in
+[LineageOS/android_external_chromium-webview_prebuilt_arm64](https://github.com/LineageOS/android_external_chromium-webview_prebuilt_arm64).
+Materialize its Git LFS APK. The object SHA-256 is
+`757ac9efd780727fcab6006560ee1368950d42b88a4b84d2da70edc9ebd438f7`.
+
 ## HDR ratio reporting without HBM
 
 Apply to the same framework base:
