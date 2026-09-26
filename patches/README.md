@@ -6,6 +6,7 @@ Apply from the Android source root after syncing these revisions:
 | --- | --- | --- |
 | frameworks/base | VoltageOS/frameworks_base_new | db91bd93ad97bcb60158fcc150198ac49fcf480b |
 | frameworks/native | VoltageOS/frameworks_native | fad0dc514dc08ff93c5badd7e05dc92f4b3c9db1 |
+| vendor/voltage | VoltageOS/vendor_voltage | 9b9effaa73d8571fca253f4545fc6f154069a3d3 |
 | hardware/qcom-caf/sm8250/display | LineageOS/android_hardware_qcom_display | 9ec8cc08004bcf005fe5c174522e1f395d3f5888 |
 
 ```sh
@@ -13,7 +14,15 @@ git -C frameworks/base am ../../device/oneplus/enchilada/patches/frameworks_base
 git -C hardware/qcom-caf/sm8250/display apply ../../../../device/oneplus/enchilada/patches/qcom_display/0001-Handle-legacy-color-interfaces.patch
 git -C frameworks/native apply ../../device/oneplus/enchilada/patches/frameworks_native/0001-Support-legacy-HDR-brightness.patch
 git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0002-Support-OEM-pickup-sensors.patch
+git -C vendor/voltage am ../../device/oneplus/enchilada/patches/vendor_voltage/0001-Correct-the-GameSpace-package-name.patch
 git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0003-Report-HDR-ratio-without-HBM.patch
 ```
 
 Do not reapply patches already present in the source tree.
+
+## WebView
+
+Use the arm64 WebView revision `11fd8afe58c011d04cb3c1b2259f406ec9fd49f2`
+from LineageOS/android_external_chromium-webview_prebuilt_arm64. Materialize its
+Git LFS APK; the object SHA-256 is
+`757ac9efd780727fcab6006560ee1368950d42b88a4b84d2da70edc9ebd438f7`.

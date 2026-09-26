@@ -1,0 +1,39 @@
+From 02f2c7f74a8a7bce90766828f7c11061ededb964 Mon Sep 17 00:00:00 2001
+From: Frost <frost.github@proton.me>
+Date: Fri, 11 Sep 2026 09:33:39 +0000
+Subject: [PATCH] vendor: Change GameSpace package name
+
+---
+ .../packages/apps/Launcher3/res/xml/grayscale_icon_map.xml      | 2 +-
+ .../preinstalled-packages-platform-voltage-product.xml          | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/overlay/common/packages/apps/Launcher3/res/xml/grayscale_icon_map.xml b/overlay/common/packages/apps/Launcher3/res/xml/grayscale_icon_map.xml
+index 626e7c94..1d3e0f8f 100644
+--- a/overlay/common/packages/apps/Launcher3/res/xml/grayscale_icon_map.xml
++++ b/overlay/common/packages/apps/Launcher3/res/xml/grayscale_icon_map.xml
+@@ -3158,7 +3158,7 @@
+     <icon drawable="@drawable/game_informer" package="com.gameinformer.tablet" />
+     <icon drawable="@drawable/game_jolt" package="com.gamejolt.app" />
+     <icon drawable="@drawable/game_space" package="com.neoteric.gamespace" />
+-    <icon drawable="@drawable/game_space" package="io.chaldeaprjkt.gamespace" />
++    <icon drawable="@drawable/game_space" package="com.voltage.gamespace" />
+     <icon drawable="@drawable/gameboy" package="com.fastemulator.gbafree" />
+     <icon drawable="@drawable/gameboy" package="com.fastemulator.gbcfree" />
+     <icon drawable="@drawable/gameboy" package="com.johnemulators.johngba" />
+diff --git a/prebuilt/common/etc/sysconfig/preinstalled-packages-platform-voltage-product.xml b/prebuilt/common/etc/sysconfig/preinstalled-packages-platform-voltage-product.xml
+index e45951b3..ec02c404 100644
+--- a/prebuilt/common/etc/sysconfig/preinstalled-packages-platform-voltage-product.xml
++++ b/prebuilt/common/etc/sysconfig/preinstalled-packages-platform-voltage-product.xml
+@@ -129,7 +129,7 @@
+         <do-not-install-in user-type="android.os.usertype.profile.CLONE" />
+     </install-in-user-type>
+     <!-- Gamespace -->
+-    <install-in-user-type package="io.chaldeaprjkt.gamespace">
++    <install-in-user-type package="com.voltage.gamespace">
+         <install-in user-type="FULL" />
+         <install-in user-type="PROFILE" />
+         <do-not-install-in user-type="android.os.usertype.profile.CLONE" />
+-- 
+2.55.0
+
