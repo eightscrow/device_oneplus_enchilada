@@ -8,6 +8,7 @@ Apply from the Android source root after syncing these revisions:
 | frameworks/native | VoltageOS/frameworks_native | fad0dc514dc08ff93c5badd7e05dc92f4b3c9db1 |
 | vendor/voltage | VoltageOS/vendor_voltage | 9b9effaa73d8571fca253f4545fc6f154069a3d3 |
 | hardware/qcom-caf/sm8250/display | LineageOS/android_hardware_qcom_display | 9ec8cc08004bcf005fe5c174522e1f395d3f5888 |
+| hardware/qcom-caf/sm8250/audio | LineageOS/android_hardware_qcom_audio | da531fc8a1348373308ccacaca5fdbb15baf700d |
 
 ```sh
 git -C frameworks/base am ../../device/oneplus/enchilada/patches/frameworks_base/0001-Synchronize-notification-background-keyguard-state.patch
@@ -16,6 +17,7 @@ git -C frameworks/native apply ../../device/oneplus/enchilada/patches/frameworks
 git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0002-Support-OEM-pickup-sensors.patch
 git -C vendor/voltage am ../../device/oneplus/enchilada/patches/vendor_voltage/0001-Correct-the-GameSpace-package-name.patch
 git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0003-Report-HDR-ratio-without-HBM.patch
+git -C hardware/qcom-caf/sm8250/audio apply ../../../../device/oneplus/enchilada/patches/qcom_audio/0001-Enable-SDM845-stereo-capture.patch
 ```
 
 Do not reapply patches already present in the source tree.
