@@ -114,3 +114,14 @@ git -C hardware/qcom-caf/sm8250/audio apply ../../../../device/oneplus/enchilada
 
 This patch selects the existing SDM845 platform definitions and permits up to
 two input channels, matching the device audio policy and camera profiles.
+
+## Notification and battery light controls
+
+Use [VoltageOS/packages_apps_Settings](https://github.com/VoltageOS/packages_apps_Settings)
+at `0f5c44f7f54f30c078817ae6310f274156ce35e8` and the framework base above.
+Apply both patches together:
+
+```sh
+git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0004-Configure-notification-and-battery-lights.patch
+git -C packages/apps/Settings apply ../../../device/oneplus/enchilada/patches/settings/0001-Add-notification-light-controls.patch
+```
