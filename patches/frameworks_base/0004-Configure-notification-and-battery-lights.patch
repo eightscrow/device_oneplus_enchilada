@@ -1,0 +1,474 @@
+diff --git a/core/java/com/android/internal/util/voltage/LedSettings.java b/core/java/com/android/internal/util/voltage/LedSettings.java
+new file mode 100644
+--- /dev/null
++++ b/core/java/com/android/internal/util/voltage/LedSettings.java
+@@ -0,0 +1,105 @@
++/*
++ * Copyright (C) 2026 eightscrow
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.internal.util.voltage;
++
++import android.content.ContentResolver;
++import android.provider.Settings;
++
++/** Shared, per-user notification and battery LED preferences. @hide */
++public final class LedSettings {
++    public static final String COLOR = "notification_light_color";
++    public static final String BRIGHTNESS = "notification_light_brightness";
++    public static final String PATTERN = "notification_light_pattern";
++    public static final String LOCK_SCREEN = "notification_light_on_lock_screen";
++    public static final String BATTERY_ENABLED = "battery_light_enabled";
++    public static final String BATTERY_LOW = "battery_light_low_color";
++    public static final String BATTERY_CHARGING = "battery_light_charging_color";
++    public static final String BATTERY_FULL = "battery_light_full_color";
++    public static final String BATTERY_BRIGHTNESS = "battery_light_brightness";
++    public static final String BATTERY_LOW_MODE = "battery_light_low_mode";
++    public static final String BATTERY_SCREEN_OFF = "battery_light_screen_off";
++    public static final String BATTERY_DND = "battery_light_dnd_off";
++
++    public static final String[] KEYS = { COLOR, BRIGHTNESS, PATTERN, LOCK_SCREEN,
++            BATTERY_ENABLED, BATTERY_LOW, BATTERY_CHARGING, BATTERY_FULL,
++            BATTERY_BRIGHTNESS, BATTERY_LOW_MODE, BATTERY_SCREEN_OFF, BATTERY_DND };
++
++    private LedSettings() {}
++
++    public static int read(ContentResolver resolver, String key, int userId) {
++        return sanitize(key, Settings.Secure.getIntForUser(
++                resolver, key, defaultValue(key), userId));
++    }
++
++    public static int defaultValue(String key) {
++        if (BRIGHTNESS.equals(key) || BATTERY_BRIGHTNESS.equals(key)) return 100;
++        if (BATTERY_ENABLED.equals(key)) return 1;
++        return 0;
++    }
++
++    public static int sanitize(String key, int value) {
++        if (COLOR.equals(key) || BATTERY_LOW.equals(key) || BATTERY_CHARGING.equals(key)
++                || BATTERY_FULL.equals(key)) {
++            // Zero means the ROM/app default. Black must not silently disable a light.
++            return (value & 0x00ffffff) == 0 ? 0 : value | 0xff000000;
++        }
++        if (BRIGHTNESS.equals(key) || BATTERY_BRIGHTNESS.equals(key)) {
++            return value == 25 || value == 50 || value == 75 || value == 100 ? value : 100;
++        }
++        if (PATTERN.equals(key) || BATTERY_LOW_MODE.equals(key)) {
++            return value >= 0 && value <= 3 ? value : 0;
++        }
++        return value == 0 || value == 1 ? value : defaultValue(key);
++    }
++
++    public static int color(int configured, int fallback) {
++        return configured == 0 ? fallback : configured;
++    }
++
++    public static int notificationColor(int configured, int appColor, int channelColor,
++            boolean userLocked) {
++        return userLocked && (channelColor & 0x00ffffff) != 0
++                ? channelColor : color(configured, appColor);
++    }
++
++    public static int brightness(int color, int percent) {
++        // Preserve the HAL's alpha semantics and scale RGB only once.
++        int alpha = color >>> 24;
++        if (alpha == 0) alpha = 255;
++        int red = component((color >> 16) & 255, alpha, percent);
++        int green = component((color >> 8) & 255, alpha, percent);
++        int blue = component(color & 255, alpha, percent);
++        return 0xff000000 | (red << 16) | (green << 8) | blue;
++    }
++
++    private static int component(int value, int alpha, int percent) {
++        return value == 0 ? 0 : Math.max(1, value * alpha * percent / 25500);
++    }
++
++    public static int onMillis(int pattern, int fallback) {
++        return pattern == 0 ? fallback : 500;
++    }
++
++    public static int offMillis(int pattern, int fallback) {
++        switch (pattern) {
++            case 1: return 500;
++            case 2: return 2000;
++            case 3: return 5000;
++            default: return fallback;
++        }
++    }
++}
+diff --git a/services/core/java/com/android/server/notification/NotificationAttentionHelper.java b/services/core/java/com/android/server/notification/NotificationAttentionHelper.java
+--- a/services/core/java/com/android/server/notification/NotificationAttentionHelper.java
++++ b/services/core/java/com/android/server/notification/NotificationAttentionHelper.java
+@@ -36,6 +36,7 @@
+ import android.app.ActivityTaskManager;
+ import android.app.KeyguardManager;
+ import android.app.Notification;
++import android.app.NotificationChannel;
+ import android.app.NotificationManager;
+ import android.app.StatusBarManager;
+ import android.content.BroadcastReceiver;
+@@ -79,6 +80,7 @@
+ import com.android.internal.logging.nano.MetricsProto;
+ import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+ import com.android.internal.util.VibrationStatsWriter;
++import com.android.internal.util.voltage.LedSettings;
+ import com.android.server.EventLogTags;
+ import com.android.server.lights.LightsManager;
+ import com.android.server.lights.LogicalLight;
+@@ -179,6 +181,10 @@
+     // The last key in this list owns the hardware.
+     @GuardedBy("mLock")
+     ArrayList<String> mLights = new ArrayList<>();
++    private int mLedColor;
++    private int mLedBrightness = 100;
++    private int mLedPattern;
++    private boolean mLedOnLockScreen;
+ 
+     private LogicalLight mNotificationLight;
+     private LogicalLight mAttentionLight;
+@@ -385,17 +391,33 @@
+                     SettingsObserver.NOTIFICATION_COOLDOWN_VIBRATE_UNLOCKED_URI, false,
+                     mSettingsObserver, UserHandle.USER_ALL);
+         }
++        for (String key : new String[] {LedSettings.COLOR, LedSettings.BRIGHTNESS,
++                LedSettings.PATTERN, LedSettings.LOCK_SCREEN}) {
++            mContext.getContentResolver().registerContentObserver(Settings.Secure.getUriFor(key),
++                    false, mSettingsObserver, UserHandle.USER_ALL);
++        }
+         mSettingsObserver.onChange(false, null);
++    }
++
++    @GuardedBy("mLock")
++    private void loadLedSettingsLocked() {
++        mLedColor = LedSettings.read(mContext.getContentResolver(), LedSettings.COLOR,
++                UserHandle.USER_CURRENT);
++        mLedBrightness = LedSettings.read(mContext.getContentResolver(), LedSettings.BRIGHTNESS,
++                UserHandle.USER_CURRENT);
++        mLedPattern = LedSettings.read(mContext.getContentResolver(), LedSettings.PATTERN,
++                UserHandle.USER_CURRENT);
++        mLedOnLockScreen = LedSettings.read(mContext.getContentResolver(), LedSettings.LOCK_SCREEN,
++                UserHandle.USER_CURRENT) == 1;
+     }
+ 
+     private void loadUserSettings() {
+         boolean pulseEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
+                 Settings.System.NOTIFICATION_LIGHT_PULSE, 0, UserHandle.USER_CURRENT) != 0;
+         synchronized (mLock) {
+-            if (mNotificationPulseEnabled != pulseEnabled) {
+-                mNotificationPulseEnabled = pulseEnabled;
+-                updateLightsLocked();
+-            }
++            mNotificationPulseEnabled = pulseEnabled;
++            loadLedSettingsLocked();
++            updateLightsLocked();
+         }
+ 
+         if (Flags.politeNotifications()) {
+@@ -1059,17 +1081,27 @@
+     void updateLightsLocked() {
+         // handle notification lights
+         NotificationRecord ledNotification = null;
+-        while (ledNotification == null && !mLights.isEmpty()) {
+-            final String owner = mLights.get(mLights.size() - 1);
+-            ledNotification = mNMP.getNotificationByKey(owner);
+-            if (ledNotification == null) {
+-                Slog.wtfStack(TAG, "LED Notification does not exist: " + owner);
+-                mLights.remove(owner);
++        for (int i = mLights.size() - 1; i >= 0; i--) {
++            NotificationRecord candidate = mNMP.getNotificationByKey(mLights.get(i));
++            if (candidate == null) {
++                mLights.remove(i);
++                continue;
++            }
++            // Recheck dynamic restrictions: DND and channel settings can change while lit.
++            boolean aboveThreshold = mIsAutomotive
++                    ? candidate.getImportance() > NotificationManager.IMPORTANCE_DEFAULT
++                    : candidate.getImportance() >= NotificationManager.IMPORTANCE_DEFAULT;
++            if (aboveThreshold
++                    && (candidate.getSuppressedVisualEffects() & SUPPRESSED_EFFECT_LIGHTS) == 0
++                    && (candidate.getLight() != null || isCallLight(candidate))) {
++                ledNotification = candidate;
++                break;
+             }
+         }
+ 
+         if (favoritesIncomingCallLights()) {
+-            if (!isCallLight(ledNotification) || mUserPresent || isInCall()) {
++            if (!mNotificationPulseEnabled || !isCallLight(ledNotification)
++                    || mUserPresent || isInCall()) {
+                 stopPriorityNotificationLight();
+             }
+         }
+@@ -1078,16 +1110,20 @@
+             return;
+         }
+ 
+-        // Don't flash while we are in a call or screen is on
+-        if (ledNotification == null || isInCall() || mScreenOn) {
++        NotificationRecord.Light light = ledNotification == null
++                ? null : ledNotification.getLight();
++        if (!mNotificationPulseEnabled || light == null || isInCall() || mUserPresent
++                || (mScreenOn && !mLedOnLockScreen)) {
+             mNotificationLight.turnOff();
+         } else {
+-            NotificationRecord.Light light = ledNotification.getLight();
+-            if (light != null && mNotificationPulseEnabled) {
+-                // pulse repeatedly
+-                mNotificationLight.setFlashing(light.color, LogicalLight.LIGHT_FLASH_TIMED,
+-                        light.onMs, light.offMs);
+-            }
++            NotificationChannel channel = ledNotification.getChannel();
++            int color = LedSettings.notificationColor(mLedColor, light.color,
++                    channel.getLightColor(),
++                    (channel.getUserLockedFields() & NotificationChannel.USER_LOCKED_LIGHTS) != 0);
++            mNotificationLight.setFlashing(LedSettings.brightness(color, mLedBrightness),
++                    LogicalLight.LIGHT_FLASH_TIMED,
++                    LedSettings.onMillis(mLedPattern, light.onMs),
++                    LedSettings.offMillis(mLedPattern, light.offMs));
+         }
+     }
+ 
+@@ -1162,7 +1198,7 @@
+         if (!isNotificationForCurrentUser(record, signals)) {
+             return false;
+         }
+-        // Light, but only when the screen is off
++        // Screen and unlock state are checked when driving the shared light.
+         return true;
+     }
+ 
+@@ -1844,14 +1880,24 @@
+                     updateLightsLocked();
+                 }
+             } else if (action.equals(Intent.ACTION_USER_PRESENT)) {
+-                mUserPresent = true;
+-                // turn off LED when user passes through lock screen
+-                stopNotificationLight();
+-                stopPriorityNotificationLight();
++                synchronized (mLock) {
++                    mUserPresent = true;
++                    mLights.clear();
++                    stopNotificationLight();
++                    stopPriorityNotificationLight();
++                }
+             } else if (action.equals(Intent.ACTION_USER_ADDED)
+                         || action.equals(Intent.ACTION_USER_REMOVED)
+                         || action.equals(Intent.ACTION_USER_SWITCHED)
+                         || action.equals(Intent.ACTION_USER_UNLOCKED)) {
++                if (action.equals(Intent.ACTION_USER_SWITCHED)) {
++                    synchronized (mLock) {
++                        // Never display the previous user's pending notification light.
++                        mLights.clear();
++                        mUserPresent = false;
++                        stopPriorityNotificationLight();
++                    }
++                }
+                 loadUserSettings();
+             }
+ 
+@@ -1899,6 +1945,14 @@
+ 
+         @Override
+         public void onChange(boolean selfChange, Uri uri) {
++            if (uri == null || Settings.Secure.CONTENT_URI.equals(uri)
++                    || (uri != null && uri.toString().startsWith(
++                            Settings.Secure.CONTENT_URI.toString() + "/notification_light_"))) {
++                synchronized (mLock) {
++                    loadLedSettingsLocked();
++                    updateLightsLocked();
++                }
++            }
+             if (uri == null || NOTIFICATION_LIGHT_PULSE_URI.equals(uri)) {
+                 boolean pulseEnabled = Settings.System.getIntForUser(
+                         mContext.getContentResolver(),
+diff --git a/services/core/java/com/android/server/notification/NotificationManagerService.java b/services/core/java/com/android/server/notification/NotificationManagerService.java
+--- a/services/core/java/com/android/server/notification/NotificationManagerService.java
++++ b/services/core/java/com/android/server/notification/NotificationManagerService.java
+@@ -12175,6 +12175,7 @@
+                     r.setPendingLogUpdate(false);
+                 }
+             }
++            mAttentionHelper.updateLightsLocked();
+         }
+     }
+ 
+diff --git a/services/core/java/com/android/server/notification/NotificationRecord.java b/services/core/java/com/android/server/notification/NotificationRecord.java
+--- a/services/core/java/com/android/server/notification/NotificationRecord.java
++++ b/services/core/java/com/android/server/notification/NotificationRecord.java
+@@ -1504,6 +1504,7 @@
+         calculateImportance();
+         calculateUserSentiment();
+         mVibration = calculateVibration();
++        mLight = calculateLights();
+         if (mChannel.getAudioAttributes() != null) {
+             mAttributes = mChannel.getAudioAttributes();
+         } else {
+diff --git a/services/core/java/com/android/server/BatteryService.java b/services/core/java/com/android/server/BatteryService.java
+--- a/services/core/java/com/android/server/BatteryService.java
++++ b/services/core/java/com/android/server/BatteryService.java
+@@ -33,9 +33,11 @@
+ import android.app.ActivityManagerInternal;
+ import android.app.AppOpsManager;
+ import android.app.BroadcastOptions;
++import android.content.BroadcastReceiver;
+ import android.content.ContentResolver;
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.IntentFilter;
+ import android.content.pm.PackageManager;
+ import android.content.pm.PackageManagerInternal;
+ import android.content.pm.ResolveInfo;
+@@ -85,6 +87,7 @@
+ import com.android.internal.logging.MetricsLogger;
+ import com.android.internal.os.SomeArgs;
+ import com.android.internal.util.DumpUtils;
++import com.android.internal.util.voltage.LedSettings;
+ import com.android.server.am.BatteryStatsService;
+ import com.android.server.health.HealthServiceWrapper;
+ import com.android.server.lights.LightsManager;
+@@ -347,6 +350,7 @@
+     private boolean mIsFirstBatteryChangedUpdate = true;
+ 
+     private Led mLed;
++    private boolean mLedSettingsReady;
+ 
+     private boolean mSentLowBatteryBroadcast = false;
+ 
+@@ -544,7 +548,35 @@
+                 resolver.registerContentObserver(Settings.Global.getUriFor(
+                         Settings.Global.LOW_POWER_MODE_TRIGGER_LEVEL),
+                         false, obs, UserHandle.USER_ALL);
++                mLedSettingsReady = true;
+                 updateBatteryWarningLevelLocked();
++                ContentObserver ledObserver = new ContentObserver(mHandler) {
++                    @Override
++                    public void onChange(boolean selfChange) {
++                        synchronized (mLock) {
++                            mLed.updateLightsLocked();
++                        }
++                    }
++                };
++                for (String key : LedSettings.KEYS) {
++                    if (key.startsWith("battery_light_")) {
++                        resolver.registerContentObserver(Settings.Secure.getUriFor(key),
++                                false, ledObserver, UserHandle.USER_ALL);
++                    }
++                }
++                resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ZEN_MODE),
++                        false, ledObserver);
++                IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
++                filter.addAction(Intent.ACTION_SCREEN_OFF);
++                filter.addAction(Intent.ACTION_USER_SWITCHED);
++                mContext.registerReceiverAsUser(new BroadcastReceiver() {
++                    @Override
++                    public void onReceive(Context context, Intent intent) {
++                        synchronized (mLock) {
++                            mLed.updateLightsLocked();
++                        }
++                    }
++                }, UserHandle.ALL, filter, null, mHandler);
+             }
+         }
+     }
+@@ -1817,6 +1849,12 @@
+         private final int mBatteryLedOff;
+         private final int mBatteryLowBehavior;
+ 
++        private int setting(String key) {
++            return mLedSettingsReady
++                    ? LedSettings.read(mContext.getContentResolver(), key, UserHandle.USER_CURRENT)
++                    : LedSettings.defaultValue(key);
++        }
++
+         public Led(Context context, LightsManager lights) {
+             mBatteryLight = lights.getLight(LightsManager.LIGHT_ID_BATTERY);
+ 
+@@ -1840,29 +1878,50 @@
+          * Synchronize on BatteryService.
+          */
+         public void updateLightsLocked() {
+-            if (mBatteryLight == null) {
++            if (mBatteryLight == null || mHealthInfo == null) {
+                 return;
+             }
++            if (setting(LedSettings.BATTERY_ENABLED) == 0
++                    || (setting(LedSettings.BATTERY_SCREEN_OFF) == 1
++                            && mContext.getSystemService(PowerManager.class).isInteractive())
++                    || (setting(LedSettings.BATTERY_DND) == 1
++                            && Settings.Global.getInt(mContext.getContentResolver(),
++                                    Settings.Global.ZEN_MODE, Settings.Global.ZEN_MODE_OFF)
++                                    != Settings.Global.ZEN_MODE_OFF)) {
++                mBatteryLight.turnOff();
++                return;
++            }
++            int brightness = setting(LedSettings.BATTERY_BRIGHTNESS);
++            int lowColor = LedSettings.brightness(LedSettings.color(
++                    setting(LedSettings.BATTERY_LOW), mBatteryLowARGB), brightness);
++            int chargingColor = LedSettings.brightness(LedSettings.color(
++                    setting(LedSettings.BATTERY_CHARGING), mBatteryMediumARGB), brightness);
++            int fullColor = LedSettings.brightness(LedSettings.color(
++                    setting(LedSettings.BATTERY_FULL), mBatteryFullARGB), brightness);
++            int lowMode = setting(LedSettings.BATTERY_LOW_MODE);
+             final int level = mHealthInfo.batteryLevel;
+             final int status = mHealthInfo.batteryStatus;
+             if (level < mLowBatteryWarningLevel) {
+-                switch (mBatteryLowBehavior) {
++                switch (lowMode == 0 ? mBatteryLowBehavior : lowMode) {
++                    case 3:
++                        mBatteryLight.turnOff();
++                        break;
+                     case LOW_BATTERY_BEHAVIOR_SOLID:
+-                        // Solid red when low battery
+-                        mBatteryLight.setColor(mBatteryLowARGB);
++                        // Solid light when low battery
++                        mBatteryLight.setColor(lowColor);
+                         break;
+                     case LOW_BATTERY_BEHAVIOR_FLASHING:
+-                        // Flash red when battery is low and not charging
+-                        mBatteryLight.setFlashing(mBatteryLowARGB, LogicalLight.LIGHT_FLASH_TIMED,
++                        // Flash when battery is low and not charging
++                        mBatteryLight.setFlashing(lowColor, LogicalLight.LIGHT_FLASH_TIMED,
+                                 mBatteryLedOn, mBatteryLedOff);
+                         break;
+                     default:
+                         if (status == BatteryManager.BATTERY_STATUS_CHARGING) {
+-                            // Solid red when battery is charging
+-                            mBatteryLight.setColor(mBatteryLowARGB);
++                            // Solid light when battery is charging
++                            mBatteryLight.setColor(lowColor);
+                         } else {
+-                            // Flash red when battery is low and not charging
+-                            mBatteryLight.setFlashing(mBatteryLowARGB,
++                            // Flash when battery is low and not charging
++                            mBatteryLight.setFlashing(lowColor,
+                                     LogicalLight.LIGHT_FLASH_TIMED, mBatteryLedOn, mBatteryLedOff);
+                         }
+                         break;
+@@ -1871,11 +1930,11 @@
+                     || status == BatteryManager.BATTERY_STATUS_FULL) {
+                 if (status == BatteryManager.BATTERY_STATUS_FULL
+                         || level >= mBatteryNearlyFullLevel) {
+-                    // Solid green when full or charging and nearly full
+-                    mBatteryLight.setColor(mBatteryFullARGB);
++                    // Full-battery color when full or charging and nearly full
++                    mBatteryLight.setColor(fullColor);
+                 } else {
+-                    // Solid orange when charging and halfway full
+-                    mBatteryLight.setColor(mBatteryMediumARGB);
++                    // Charging color when charging and halfway full
++                    mBatteryLight.setColor(chargingColor);
+                 }
+             } else {
+                 // No lights if not charging and not low

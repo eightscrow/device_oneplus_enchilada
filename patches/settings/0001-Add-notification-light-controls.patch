@@ -1,0 +1,665 @@
+diff --git a/src/com/android/settings/notification/NotificationLightPreferenceController.java b/src/com/android/settings/notification/NotificationLightPreferenceController.java
+new file mode 100644
+--- /dev/null
++++ b/src/com/android/settings/notification/NotificationLightPreferenceController.java
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2026 eightscrow
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.settings.notification;
++
++import android.content.Context;
++import android.provider.Settings;
++
++import com.android.settings.R;
++import com.android.settings.core.BasePreferenceController;
++
++/** Entry for the same master switch used by notification channels. */
++public class NotificationLightPreferenceController extends BasePreferenceController {
++    public NotificationLightPreferenceController(Context context, String key) {
++        super(context, key);
++    }
++
++    @Override
++    public int getAvailabilityStatus() {
++        return mContext.getResources().getBoolean(
++                com.android.internal.R.bool.config_intrusiveNotificationLed)
++                ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
++    }
++
++    @Override
++    public CharSequence getSummary() {
++        boolean enabled = Settings.System.getInt(mContext.getContentResolver(),
++                Settings.System.NOTIFICATION_LIGHT_PULSE, 0) != 0;
++        return mContext.getText(enabled ? R.string.led_entry_on : R.string.led_entry_off);
++    }
++}
+diff --git a/src/com/android/settings/notification/NotificationLightSettings.java b/src/com/android/settings/notification/NotificationLightSettings.java
+new file mode 100644
+--- /dev/null
++++ b/src/com/android/settings/notification/NotificationLightSettings.java
+@@ -0,0 +1,152 @@
++/*
++ * Copyright (C) 2026 eightscrow
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.settings.notification;
++
++import android.app.settings.SettingsEnums;
++import android.content.Context;
++import android.database.ContentObserver;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.UserHandle;
++import android.provider.Settings;
++
++import androidx.preference.ListPreference;
++import androidx.preference.Preference;
++import androidx.preference.TwoStatePreference;
++
++import com.android.internal.util.voltage.LedSettings;
++import com.android.settings.R;
++import com.android.settings.dashboard.DashboardFragment;
++import com.android.settings.search.BaseSearchIndexProvider;
++import com.android.settingslib.search.SearchIndexable;
++
++@SearchIndexable
++public class NotificationLightSettings extends DashboardFragment {
++    private final ContentObserver mObserver = new ContentObserver(new Handler(Looper.getMainLooper())) {
++        @Override
++        public void onChange(boolean selfChange) {
++            refresh();
++        }
++    };
++
++    @Override
++    public int getMetricsCategory() {
++        return SettingsEnums.CONFIGURE_NOTIFICATION;
++    }
++
++    @Override
++    protected String getLogTag() {
++        return "NotificationLight";
++    }
++
++    @Override
++    protected int getPreferenceScreenResId() {
++        return R.xml.notification_light_settings;
++    }
++
++    @Override
++    public void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        for (String key : LedSettings.KEYS) {
++            Preference preference = findPreference(key);
++            preference.setPersistent(false);
++            preference.setOnPreferenceChangeListener((pref, value) -> {
++                int number = value instanceof Boolean ? ((Boolean) value ? 1 : 0)
++                        : Integer.parseInt((String) value);
++                return Settings.Secure.putInt(getContext().getContentResolver(), key,
++                        LedSettings.sanitize(key, number));
++            });
++        }
++        findPreference("led_test").setOnPreferenceClickListener(pref -> {
++            NotificationLightPreview.schedule(getContext());
++            return true;
++        });
++        findPreference("led_cancel_test").setOnPreferenceClickListener(pref -> {
++            NotificationLightPreview.cancel(getContext());
++            return true;
++        });
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        for (String key : LedSettings.KEYS) {
++            getContext().getContentResolver().registerContentObserver(
++                    Settings.Secure.getUriFor(key), false, mObserver);
++        }
++        getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
++                Settings.System.NOTIFICATION_LIGHT_PULSE), false, mObserver);
++        refresh();
++    }
++
++    @Override
++    public void onPause() {
++        getContext().getContentResolver().unregisterContentObserver(mObserver);
++        super.onPause();
++    }
++
++    private void refresh() {
++        if (getContext() == null || getPreferenceScreen() == null) return;
++        boolean notifications = Settings.System.getInt(getContext().getContentResolver(),
++                Settings.System.NOTIFICATION_LIGHT_PULSE, 0) != 0;
++        boolean battery = LedSettings.read(getContext().getContentResolver(),
++                LedSettings.BATTERY_ENABLED, UserHandle.myUserId()) == 1;
++        for (String key : LedSettings.KEYS) {
++            Preference preference = findPreference(key);
++            int value = LedSettings.read(getContext().getContentResolver(), key,
++                    UserHandle.myUserId());
++            if (preference instanceof ListPreference) {
++                ListPreference list = (ListPreference) preference;
++                if (key.endsWith("color")) configureColorPreference(list, value);
++                else list.setValue(Integer.toString(value));
++            } else if (preference instanceof TwoStatePreference) {
++                ((TwoStatePreference) preference).setChecked(value == 1);
++            }
++            preference.setEnabled(LedSettings.BATTERY_ENABLED.equals(key)
++                    || (key.startsWith("battery_light_") ? battery : notifications));
++        }
++        findPreference("led_test").setEnabled(notifications);
++    }
++
++    public static void configureColorPreference(ListPreference preference, int color) {
++        preference.setEntries(R.array.led_color_names);
++        preference.setEntryValues(R.array.led_color_values);
++        String value = Integer.toString(color);
++        if (preference.findIndexOfValue(value) < 0) {
++            CharSequence[] entries = preference.getEntries();
++            CharSequence[] values = preference.getEntryValues();
++            CharSequence[] extendedEntries = java.util.Arrays.copyOf(entries, entries.length + 1);
++            CharSequence[] extendedValues = java.util.Arrays.copyOf(values, values.length + 1);
++            extendedEntries[entries.length] = String.format("#%06X", color & 0x00ffffff);
++            extendedValues[values.length] = value;
++            preference.setEntries(extendedEntries);
++            preference.setEntryValues(extendedValues);
++        }
++        preference.setValue(value);
++        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
++    }
++
++    public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
++            new BaseSearchIndexProvider(R.xml.notification_light_settings) {
++                @Override
++                protected boolean isPageSearchEnabled(Context context) {
++                    return context.getResources().getBoolean(
++                            com.android.internal.R.bool.config_intrusiveNotificationLed);
++                }
++            };
++}
+diff --git a/src/com/android/settings/notification/NotificationLightPreview.java b/src/com/android/settings/notification/NotificationLightPreview.java
+new file mode 100644
+--- /dev/null
++++ b/src/com/android/settings/notification/NotificationLightPreview.java
+@@ -0,0 +1,87 @@
++/*
++ * Copyright (C) 2026 eightscrow
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.settings.notification;
++
++import android.app.ActivityManager;
++import android.app.AlarmManager;
++import android.app.Notification;
++import android.app.NotificationChannel;
++import android.app.NotificationManager;
++import android.app.PendingIntent;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.os.PowerManager;
++import android.os.SystemClock;
++import android.os.UserHandle;
++import android.provider.Settings;
++import android.widget.Toast;
++
++import com.android.settings.R;
++
++/** A real, silent test notification follows the normal LED and DND rules. */
++public class NotificationLightPreview extends BroadcastReceiver {
++    private static final String CHANNEL = "notification_light_preview";
++    private static final String TAG = "notification_light_preview";
++    private static final int ID = 1;
++
++    private static PendingIntent pendingIntent(Context context) {
++        return PendingIntent.getBroadcast(context, 0,
++                new Intent(context, NotificationLightPreview.class),
++                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
++    }
++
++    public static void schedule(Context context) {
++        cancel(context);
++        AlarmManager alarm = context.getSystemService(AlarmManager.class);
++        if (!alarm.canScheduleExactAlarms()) {
++            Toast.makeText(context, R.string.led_test_unavailable, Toast.LENGTH_LONG).show();
++            return;
++        }
++        alarm.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,
++                SystemClock.elapsedRealtime() + 5000, pendingIntent(context));
++        Toast.makeText(context, R.string.led_test_instructions, Toast.LENGTH_LONG).show();
++    }
++
++    public static void cancel(Context context) {
++        context.getSystemService(AlarmManager.class).cancel(pendingIntent(context));
++        context.getSystemService(NotificationManager.class).cancel(TAG, ID);
++    }
++
++    @Override
++    public void onReceive(Context context, Intent intent) {
++        if (ActivityManager.getCurrentUser() != UserHandle.myUserId()
++                || context.getSystemService(PowerManager.class).isInteractive()
++                || Settings.System.getInt(context.getContentResolver(),
++                        Settings.System.NOTIFICATION_LIGHT_PULSE, 0) == 0) return;
++        NotificationManager manager = context.getSystemService(NotificationManager.class);
++        NotificationChannel channel = new NotificationChannel(CHANNEL,
++                context.getText(R.string.led_test_title), NotificationManager.IMPORTANCE_DEFAULT);
++        channel.enableLights(true);
++        channel.setSound(null, null);
++        channel.enableVibration(false);
++        manager.createNotificationChannel(channel);
++        manager.notify(TAG, ID, new Notification.Builder(context, CHANNEL)
++                .setSmallIcon(R.drawable.ic_lightbulb_outline_24)
++                .setContentTitle(context.getText(R.string.led_test_title))
++                .setContentText(context.getText(R.string.led_test_notification))
++                .setTimeoutAfter(20000)
++                .setAutoCancel(true)
++                .setLocalOnly(true)
++                .build());
++    }
++}
+diff --git a/src/com/android/settings/notification/app/LightColorPreferenceController.java b/src/com/android/settings/notification/app/LightColorPreferenceController.java
+new file mode 100644
+--- /dev/null
++++ b/src/com/android/settings/notification/app/LightColorPreferenceController.java
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (C) 2026 eightscrow
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.settings.notification.app;
++
++import android.app.NotificationChannel;
++import android.content.Context;
++
++import androidx.preference.Preference;
++
++import com.android.internal.util.voltage.LedSettings;
++import com.android.settings.RestrictedListPreference;
++import com.android.settings.notification.NotificationBackend;
++import com.android.settings.notification.NotificationLightSettings;
++
++public class LightColorPreferenceController extends LightsPreferenceController {
++    public LightColorPreferenceController(Context context, NotificationBackend backend) {
++        super(context, backend);
++    }
++
++    @Override
++    public String getPreferenceKey() {
++        return "light_color";
++    }
++
++    @Override
++    public void updateState(Preference preference) {
++        if (mChannel == null) return;
++        RestrictedListPreference list = (RestrictedListPreference) preference;
++        list.setDisabledByAdmin(mAdmin);
++        list.setEnabled(mAdmin == null && mChannel.shouldShowLights());
++        NotificationLightSettings.configureColorPreference(list,
++                (mChannel.getUserLockedFields() & NotificationChannel.USER_LOCKED_LIGHTS) != 0
++                        ? mChannel.getLightColor() : 0);
++    }
++
++    @Override
++    public boolean onPreferenceChange(Preference preference, Object newValue) {
++        if (mChannel == null || mAdmin != null || !mChannel.shouldShowLights()) return false;
++        mChannel.setLightColor(LedSettings.sanitize(LedSettings.COLOR,
++                Integer.parseInt((String) newValue)));
++        mChannel.lockFields(NotificationChannel.USER_LOCKED_LIGHTS);
++        saveChannel();
++        updateState(preference);
++        return true;
++    }
++}
+diff --git a/res/xml/configure_notification_settings.xml b/res/xml/configure_notification_settings.xml
+--- a/res/xml/configure_notification_settings.xml
++++ b/res/xml/configure_notification_settings.xml
+@@ -213,11 +213,12 @@
+             settings:controller="com.android.settings.notification.BadgingNotificationPreferenceController"/>
+ 
+         <!-- Pulse notification light, on devices that support it -->
+-        <SwitchPreferenceCompat
++        <Preference
+             android:key="notification_pulse"
+             android:order="28"
+-            android:title="@string/notification_pulse_title"
+-            settings:controller="com.android.settings.notification.PulseNotificationPreferenceController"/>
++            android:title="@string/led_settings_title"
++            android:fragment="com.android.settings.notification.NotificationLightSettings"
++            settings:controller="com.android.settings.notification.NotificationLightPreferenceController"/>
+ 
+         <SwitchPreferenceCompat
+             android:key="notification_assistant"
+diff --git a/src/com/android/settings/notification/app/ChannelNotificationSettings.java b/src/com/android/settings/notification/app/ChannelNotificationSettings.java
+--- a/src/com/android/settings/notification/app/ChannelNotificationSettings.java
++++ b/src/com/android/settings/notification/app/ChannelNotificationSettings.java
+@@ -132,6 +132,7 @@
+         mControllers.add(new VisibilityPreferenceController(context, new LockPatternUtils(context),
+                 mBackend));
+         mControllers.add(new LightsPreferenceController(context, mBackend));
++        mControllers.add(new LightColorPreferenceController(context, mBackend));
+         mControllers.add(new BadgePreferenceController(context, mBackend));
+         mControllers.add(new DndPreferenceController(context, mBackend));
+         mControllers.add(new NotificationsOffPreferenceController(context));
+diff --git a/src/com/android/settings/notification/app/ConversationNotificationSettings.java b/src/com/android/settings/notification/app/ConversationNotificationSettings.java
+--- a/src/com/android/settings/notification/app/ConversationNotificationSettings.java
++++ b/src/com/android/settings/notification/app/ConversationNotificationSettings.java
+@@ -94,6 +94,7 @@
+         mControllers.add(new VisibilityPreferenceController(context, new LockPatternUtils(context),
+                 mBackend));
+         mControllers.add(new LightsPreferenceController(context, mBackend));
++        mControllers.add(new LightColorPreferenceController(context, mBackend));
+         mControllers.add(new BadgePreferenceController(context, mBackend));
+         mControllers.add(new NotificationsOffPreferenceController(context));
+         mControllers.add(new BubblePreferenceController(context, getChildFragmentManager(),
+diff --git a/res/xml/channel_notification_settings.xml b/res/xml/channel_notification_settings.xml
+--- a/res/xml/channel_notification_settings.xml
++++ b/res/xml/channel_notification_settings.xml
+@@ -95,6 +95,15 @@
+         android:icon="@drawable/ic_lightbulb_outline_24"
+         android:title="@string/notification_show_lights_title" />
+ 
++        <com.android.settings.RestrictedListPreference
++            android:key="light_color"
++            android:order="14"
++            android:persistent="false"
++            android:icon="@drawable/ic_lightbulb_outline_24"
++            android:title="@string/led_color_title"
++            android:entries="@array/led_color_names"
++            android:entryValues="@array/led_color_values" />
++
+     <!-- Show badge -->
+     <com.android.settingslib.RestrictedSwitchPreference
+         android:key="badge"
+diff --git a/res/xml/conversation_notification_settings.xml b/res/xml/conversation_notification_settings.xml
+--- a/res/xml/conversation_notification_settings.xml
++++ b/res/xml/conversation_notification_settings.xml
+@@ -82,6 +82,14 @@
+             android:icon="@drawable/ic_lightbulb_outline_24"
+             android:title="@string/notification_show_lights_title"/>
+ 
++        <com.android.settings.RestrictedListPreference
++            android:key="light_color"
++            android:persistent="false"
++            android:icon="@drawable/ic_lightbulb_outline_24"
++            android:title="@string/led_color_title"
++            android:entries="@array/led_color_names"
++            android:entryValues="@array/led_color_values" />
++
+         <!-- Vibration -->
+         <com.android.settingslib.RestrictedSwitchPreference
+             android:key="vibrate"
+diff --git a/src/com/android/settings/notification/app/LightsPreferenceController.java b/src/com/android/settings/notification/app/LightsPreferenceController.java
+--- a/src/com/android/settings/notification/app/LightsPreferenceController.java
++++ b/src/com/android/settings/notification/app/LightsPreferenceController.java
+@@ -74,6 +74,10 @@
+             final boolean lights = (Boolean) newValue;
+             mChannel.enableLights(lights);
+             saveChannel();
++            if (preference.getParent() != null) {
++                Preference color = preference.getParent().findPreference("light_color");
++                if (color != null) color.setEnabled(lights && mAdmin == null);
++            }
+         }
+         return true;
+     }
+diff --git a/src/com/android/settings/core/gateway/SettingsGateway.java b/src/com/android/settings/core/gateway/SettingsGateway.java
+--- a/src/com/android/settings/core/gateway/SettingsGateway.java
++++ b/src/com/android/settings/core/gateway/SettingsGateway.java
+@@ -339,6 +339,7 @@
+             ConversationListSettings.class.getName(),
+             BubbleNotificationSettings.class.getName(),
+             ConfigureNotificationSettings.class.getName(),
++            com.android.settings.notification.NotificationLightSettings.class.getName(),
+             ChooseLockPassword.ChooseLockPasswordFragment.class.getName(),
+             ChooseLockPattern.ChooseLockPatternFragment.class.getName(),
+             AppInfoDashboardFragment.class.getName(),
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -6475,5 +6475,8 @@
+             </intent-filter>
+         </receiver>
+ 
++        <receiver
++            android:name=".notification.NotificationLightPreview"
++            android:exported="false" />
+     </application>
+ </manifest>
+diff --git a/res/xml/notification_light_settings.xml b/res/xml/notification_light_settings.xml
+new file mode 100644
+--- /dev/null
++++ b/res/xml/notification_light_settings.xml
+@@ -0,0 +1,95 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2026 eightscrow
++     SPDX-License-Identifier: Apache-2.0 -->
++<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:settings="http://schemas.android.com/apk/res-auto"
++    android:title="@string/led_settings_title">
++
++    <SwitchPreferenceCompat
++        android:key="notification_light_pulse"
++        android:title="@string/led_notifications_enabled"
++        settings:controller="com.android.settings.notification.PulseNotificationPreferenceController" />
++
++    <Preference
++        android:key="led_help"
++        android:selectable="false"
++        android:summary="@string/led_help" />
++
++    <ListPreference
++        android:key="notification_light_color"
++        android:title="@string/led_default_color"
++        android:entries="@array/led_color_names"
++        android:entryValues="@array/led_color_values" />
++    <ListPreference
++        android:key="notification_light_pattern"
++        android:title="@string/led_pattern_title"
++        android:entries="@array/led_pattern_names"
++        android:entryValues="@array/led_mode_values"
++        settings:useSimpleSummaryProvider="true" />
++    <ListPreference
++        android:key="notification_light_brightness"
++        android:title="@string/led_brightness_title"
++        android:entries="@array/led_brightness_names"
++        android:entryValues="@array/led_brightness_values"
++        settings:useSimpleSummaryProvider="true" />
++    <SwitchPreferenceCompat
++        android:key="notification_light_on_lock_screen"
++        android:title="@string/led_lock_screen_title"
++        android:summary="@string/led_lock_screen_summary" />
++    <Preference
++        android:key="led_apps"
++        android:title="@string/led_apps_title"
++        android:summary="@string/led_apps_summary"
++        android:fragment="com.android.settings.applications.manageapplications.ManageApplications">
++        <extra android:name="classname"
++            android:value="com.android.settings.Settings$NotificationAppListActivity" />
++    </Preference>
++    <Preference
++        android:key="led_test"
++        android:title="@string/led_test_title"
++        android:summary="@string/led_test_instructions" />
++    <Preference
++        android:key="led_cancel_test"
++        android:title="@string/led_cancel_test" />
++
++    <PreferenceCategory
++        android:key="led_battery_category"
++        android:title="@string/led_battery_title">
++        <SwitchPreferenceCompat
++            android:key="battery_light_enabled"
++            android:title="@string/led_battery_enabled" />
++        <ListPreference
++            android:key="battery_light_brightness"
++            android:title="@string/led_brightness_title"
++            android:entries="@array/led_brightness_names"
++            android:entryValues="@array/led_brightness_values"
++            settings:useSimpleSummaryProvider="true" />
++        <ListPreference
++            android:key="battery_light_low_color"
++            android:title="@string/led_battery_low_color"
++            android:entries="@array/led_color_names"
++            android:entryValues="@array/led_color_values" />
++        <ListPreference
++            android:key="battery_light_charging_color"
++            android:title="@string/led_battery_charging_color"
++            android:entries="@array/led_color_names"
++            android:entryValues="@array/led_color_values" />
++        <ListPreference
++            android:key="battery_light_full_color"
++            android:title="@string/led_battery_full_color"
++            android:entries="@array/led_color_names"
++            android:entryValues="@array/led_color_values" />
++        <ListPreference
++            android:key="battery_light_low_mode"
++            android:title="@string/led_battery_low_mode"
++            android:entries="@array/led_low_mode_names"
++            android:entryValues="@array/led_mode_values"
++            settings:useSimpleSummaryProvider="true" />
++        <SwitchPreferenceCompat
++            android:key="battery_light_screen_off"
++            android:title="@string/led_battery_screen_off" />
++        <SwitchPreferenceCompat
++            android:key="battery_light_dnd_off"
++            android:title="@string/led_battery_dnd" />
++    </PreferenceCategory>
++</PreferenceScreen>
+diff --git a/res/values/notification_light.xml b/res/values/notification_light.xml
+new file mode 100644
+--- /dev/null
++++ b/res/values/notification_light.xml
+@@ -0,0 +1,82 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2026 eightscrow; SPDX-License-Identifier: Apache-2.0 -->
++<resources>
++    <string name="led_settings_title">Notification light</string>
++    <string name="led_entry_on">On. Colors, blinking and charging light</string>
++    <string name="led_entry_off">Off. Colors, blinking and charging light</string>
++    <string name="led_notifications_enabled">Use notification light</string>
++    <string name="led_help">The light follows notification categories and Do Not Disturb. Unlocking clears the current light. Enable the light in the categories you want to use. Default keeps app colors; a selected category color overrides the default notification color.</string>
++    <string name="led_default_color">Default notification color</string>
++    <string name="led_color_title">Light color</string>
++    <string name="led_pattern_title">Blink pattern</string>
++    <string name="led_brightness_title">Brightness</string>
++    <string name="led_lock_screen_title">Keep blinking on the lock screen</string>
++    <string name="led_lock_screen_summary">Continue while the screen is on and locked. Stop when unlocked.</string>
++    <string name="led_apps_title">App notification categories</string>
++    <string name="led_apps_summary">Choose an app and a notification category to enable its light or override the default color.</string>
++    <string name="led_test_title">Test notification light</string>
++    <string name="led_test_instructions">Turn the screen off within 5 seconds. A silent test notification will light the LED for up to 20 seconds, following Do Not Disturb.</string>
++    <string name="led_test_notification">The light turns off when you unlock or dismiss this notification. The test expires after 20 seconds.</string>
++    <string name="led_test_unavailable">Allow alarms for Settings to schedule the light test.</string>
++    <string name="led_cancel_test">Cancel light test</string>
++    <string name="led_battery_title">Charging and low battery</string>
++    <string name="led_battery_enabled">Use battery light</string>
++    <string name="led_battery_low_color">Low battery color</string>
++    <string name="led_battery_charging_color">Charging color</string>
++    <string name="led_battery_full_color">Full or nearly full color</string>
++    <string name="led_battery_low_mode">Low battery behavior</string>
++    <string name="led_battery_screen_off">Only while the screen is off</string>
++    <string name="led_battery_dnd">Turn off during Do Not Disturb</string>
++    <string-array name="led_color_names">
++        <item>Default</item>
++        <item>White</item>
++        <item>Red</item>
++        <item>Orange</item>
++        <item>Yellow</item>
++        <item>Green</item>
++        <item>Cyan</item>
++        <item>Blue</item>
++        <item>Pink</item>
++    </string-array>
++    <string-array name="led_color_values" translatable="false">
++        <item>0</item>
++        <item>-1</item>
++        <item>-65536</item>
++        <item>-32768</item>
++        <item>-256</item>
++        <item>-16711936</item>
++        <item>-16711681</item>
++        <item>-16776961</item>
++        <item>-65281</item>
++    </string-array>
++    <string-array name="led_pattern_names">
++        <item>App default</item>
++        <item>Fast (0.5 s pause)</item>
++        <item>Normal (2 s pause)</item>
++        <item>Slow (5 s pause)</item>
++    </string-array>
++    <string-array name="led_mode_values" translatable="false">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++        <item>3</item>
++    </string-array>
++    <string-array name="led_brightness_names">
++        <item>25%</item>
++        <item>50%</item>
++        <item>75%</item>
++        <item>100%</item>
++    </string-array>
++    <string-array name="led_brightness_values" translatable="false">
++        <item>25</item>
++        <item>50</item>
++        <item>75</item>
++        <item>100</item>
++    </string-array>
++    <string-array name="led_low_mode_names">
++        <item>Default</item>
++        <item>Steady</item>
++        <item>Blinking</item>
++        <item>Off</item>
++    </string-array>
++</resources>
