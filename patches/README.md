@@ -102,3 +102,15 @@ Adjustment profiles cannot overwrite those mappings during enumeration.
 Native SDR profiles are selected from their color-gamut and dynamic-range
 attributes. The legacy `zhal_native` profile contains calibrated color
 processing and is not treated as a native bypass based on its name.
+
+## SDM845 stereo audio capture
+
+Use [LineageOS/android_hardware_qcom_audio](https://github.com/LineageOS/android_hardware_qcom_audio)
+at `da531fc8a1348373308ccacaca5fdbb15baf700d` for the sm8250 audio path.
+
+```sh
+git -C hardware/qcom-caf/sm8250/audio apply ../../../../device/oneplus/enchilada/patches/qcom_audio/0001-Enable-SDM845-stereo-capture.patch
+```
+
+This patch selects the existing SDM845 platform definitions and permits up to
+two input channels, matching the device audio policy and camera profiles.
