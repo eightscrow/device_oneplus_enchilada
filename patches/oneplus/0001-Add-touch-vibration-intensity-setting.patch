@@ -1,0 +1,154 @@
+diff --git a/packages/KeyHandler/src/org/lineageos/settings/device/TouchVibrationPreference.kt b/packages/KeyHandler/src/org/lineageos/settings/device/TouchVibrationPreference.kt
+new file mode 100644
+--- /dev/null
++++ b/packages/KeyHandler/src/org/lineageos/settings/device/TouchVibrationPreference.kt
+@@ -0,0 +1,78 @@
++// SPDX-License-Identifier: Apache-2.0
++
++package org.lineageos.settings.device
++
++import android.content.Context
++import android.database.ContentObserver
++import android.os.Handler
++import android.os.Looper
++import android.os.VibrationAttributes
++import android.os.Vibrator
++import android.os.VibratorManager
++import android.provider.Settings
++import android.widget.Toast
++import androidx.preference.ListPreference
++
++class TouchVibrationPreference(
++    private val context: Context,
++    private val preference: ListPreference,
++) {
++    private val resolver = context.contentResolver
++    private val vibrator = context.getSystemService(VibratorManager::class.java).defaultVibrator
++    private val intensityKey = Settings.System.HAPTIC_FEEDBACK_INTENSITY
++    private val enabledKey = Settings.System.HAPTIC_FEEDBACK_ENABLED
++    private val observedKeys = arrayOf(intensityKey, enabledKey, Settings.System.VIBRATE_ON)
++    private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
++        override fun onChange(selfChange: Boolean) = refresh()
++    }
++
++    init {
++        preference.isPersistent = false
++        preference.setOnPreferenceChangeListener { _, value ->
++            val intensity = (value as? String)?.toIntOrNull()
++            if (intensity == null || intensity !in 0..2 || !preference.isEnabled) {
++                false
++            } else {
++                update(intensity)
++            }
++        }
++    }
++
++    fun start() {
++        observedKeys.forEach {
++            resolver.registerContentObserver(Settings.System.getUriFor(it), false, observer)
++        }
++        refresh()
++    }
++
++    fun stop() = resolver.unregisterContentObserver(observer)
++
++    private fun refresh() {
++        preference.isVisible = context.resources.getBoolean(R.bool.config_touchVibrationIntensity) &&
++            vibrator.hasAmplitudeControl()
++        preference.isEnabled = preference.isVisible &&
++            Settings.System.getInt(resolver, Settings.System.VIBRATE_ON, 1) > 0
++        val enabled = Settings.System.getInt(resolver, enabledKey, 0) != 0
++        val defaultIntensity = vibrator.getDefaultVibrationIntensity(VibrationAttributes.USAGE_TOUCH)
++        val stored = Settings.System.getInt(resolver, intensityKey, defaultIntensity)
++        val intensity = if (stored in 0..3) stored else defaultIntensity
++        preference.value = if (enabled) intensity.coerceIn(0, 2).toString() else "0"
++    }
++
++    private fun update(intensity: Int): Boolean {
++        val oldIntensity = Settings.System.getString(resolver, intensityKey)
++        val oldEnabled = Settings.System.getString(resolver, enabledKey)
++        val enabled = if (intensity == Vibrator.VIBRATION_INTENSITY_OFF) 0 else 1
++        val success = Settings.System.putInt(resolver, intensityKey, intensity) &&
++            Settings.System.putInt(resolver, enabledKey, enabled) &&
++            Settings.System.getInt(resolver, intensityKey, -1) == intensity &&
++            Settings.System.getInt(resolver, enabledKey, -1) == enabled
++        if (!success) {
++            Settings.System.putString(resolver, intensityKey, oldIntensity)
++            Settings.System.putString(resolver, enabledKey, oldEnabled)
++            refresh()
++            Toast.makeText(context, R.string.touch_vibration_save_error, Toast.LENGTH_SHORT).show()
++        }
++        return success
++    }
++}
+diff --git a/packages/KeyHandler/src/org/lineageos/settings/device/ButtonSettingsFragment.kt b/packages/KeyHandler/src/org/lineageos/settings/device/ButtonSettingsFragment.kt
+--- a/packages/KeyHandler/src/org/lineageos/settings/device/ButtonSettingsFragment.kt
++++ b/packages/KeyHandler/src/org/lineageos/settings/device/ButtonSettingsFragment.kt
+@@ -9,7 +9,19 @@
+ import com.android.settingslib.widget.SettingsBasePreferenceFragment
+ 
+ class ButtonSettingsFragment : SettingsBasePreferenceFragment() {
++    private lateinit var touchVibration: TouchVibrationPreference
+     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+         setPreferencesFromResource(R.xml.button_panel, rootKey)
++        touchVibration = TouchVibrationPreference(requireContext(),
++            requireNotNull(findPreference("touch_vibration_intensity")))
++    }
++    override fun onStart() {
++        super.onStart()
++        touchVibration.start()
++    }
++
++    override fun onStop() {
++        touchVibration.stop()
++        super.onStop()
+     }
+ }
+diff --git a/packages/KeyHandler/AndroidManifest.xml b/packages/KeyHandler/AndroidManifest.xml
+--- a/packages/KeyHandler/AndroidManifest.xml
++++ b/packages/KeyHandler/AndroidManifest.xml
+@@ -19,6 +19,7 @@
+           package="org.lineageos.settings.device">
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+     <uses-permission android:name="android.permission.VIBRATE" />
++    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+     <uses-permission android:name="com.android.systemui.permission.PLUGIN" />
+ 
+     <protected-broadcast android:name="com.android.systemui.doze.pulse" />
+diff --git a/packages/KeyHandler/res/xml/button_panel.xml b/packages/KeyHandler/res/xml/button_panel.xml
+--- a/packages/KeyHandler/res/xml/button_panel.xml
++++ b/packages/KeyHandler/res/xml/button_panel.xml
+@@ -50,4 +50,11 @@
+             android:defaultValue="true" />
+ 
+     </PreferenceCategory>
++    <ListPreference
++        android:key="touch_vibration_intensity"
++        android:title="@string/touch_vibration_intensity_title"
++        android:entries="@array/touch_vibration_intensity_entries"
++        android:entryValues="@array/touch_vibration_intensity_values"
++        android:persistent="false"
++        app:useSimpleSummaryProvider="true" />
+ </PreferenceScreen>
+diff --git a/packages/KeyHandler/res/values/touch_vibration.xml b/packages/KeyHandler/res/values/touch_vibration.xml
+new file mode 100644
+--- /dev/null
++++ b/packages/KeyHandler/res/values/touch_vibration.xml
+@@ -0,0 +1,17 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<resources>
++    <bool name="config_touchVibrationIntensity">false</bool>
++    <string name="touch_vibration_intensity_title">Touch vibration intensity</string>
++    <string name="touch_vibration_save_error">Could not save touch vibration intensity</string>
++    <string-array name="touch_vibration_intensity_entries">
++        <item>Off</item>
++        <item>Low</item>
++        <item>Standard</item>
++    </string-array>
++    <string-array name="touch_vibration_intensity_values" translatable="false">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++    </string-array>
++</resources>

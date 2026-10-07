@@ -1,0 +1,199 @@
+diff --git a/aidl/VibratorOL/QpnpAmplitude.h b/aidl/VibratorOL/QpnpAmplitude.h
+new file mode 100644
+--- /dev/null
++++ b/aidl/VibratorOL/QpnpAmplitude.h
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: Apache-2.0
++
++#pragma once
++
++#include <algorithm>
++#include <cerrno>
++#include <cmath>
++#include <functional>
++#include <mutex>
++#include <utility>
++
++class QpnpAmplitude {
++public:
++    using Writer = std::function<int(const char*, int)>;
++    static constexpr int kStepMv = 116;
++    static constexpr int kDefaultMv = 2088;
++
++    explicit QpnpAmplitude(Writer writer) : mWrite(std::move(writer)) {}
++
++    int initialize() { return off(); }
++
++    int setAmplitude(float amplitude) {
++        if (!std::isfinite(amplitude) || amplitude <= 0 || amplitude > 1) return -EINVAL;
++        std::lock_guard<std::mutex> lock(mMutex);
++        const int steps = std::max(1, static_cast<int>(std::lround(
++                amplitude * (kDefaultMv / kStepMv))));
++        const int millivolts = steps * kStepMv;
++        const int result = mWrite("vmax_mv", millivolts);
++        mAmplitudeValid = result == 0;
++        if (mAmplitudeValid) mMillivolts = millivolts;
++        return result;
++    }
++
++    int on(int timeoutMs) {
++        if (timeoutMs <= 0 || timeoutMs > 15000) return -EINVAL;
++        std::lock_guard<std::mutex> lock(mMutex);
++        if (!mAmplitudeValid) return -EIO;
++        int result = mWrite("activate", 0);
++        if (result == 0) result = mWrite("vmax_mv", mMillivolts);
++        if (result == 0) result = mWrite("state", 1);
++        if (result == 0) result = mWrite("duration", timeoutMs);
++        if (result == 0) result = mWrite("activate", 1);
++        if (result != 0) {
++            mWrite("activate", 0);
++            mAmplitudeValid = false;
++        }
++        return result;
++    }
++
++    int off() {
++        std::lock_guard<std::mutex> lock(mMutex);
++        mMillivolts = kDefaultMv;
++        int result = mWrite("activate", 0);
++        mAmplitudeValid = result == 0;
++        return result;
++    }
++
++private:
++    Writer mWrite;
++    std::mutex mMutex;
++    int mMillivolts = kDefaultMv;
++    bool mAmplitudeValid = false;
++};
+diff --git a/aidl/VibratorOL/Vibrator.h b/aidl/VibratorOL/Vibrator.h
+--- a/aidl/VibratorOL/Vibrator.h
++++ b/aidl/VibratorOL/Vibrator.h
+@@ -36,6 +36,8 @@
+ #include <aidl/android/hardware/vibrator/BnVibrator.h>
+ #include <thread>
+ #include <mutex>
++#include <memory>
++#include "QpnpAmplitude.h"
+ 
+ namespace aidl {
+ namespace android {
+@@ -95,7 +97,10 @@
+     int off();
+     bool mDetected;
+     bool mIsLdo;
++    bool supportsAmplitude() const { return mQpnp != nullptr; }
++    int setAmplitude(float amplitude);
+ private:
++    std::unique_ptr<QpnpAmplitude> mQpnp;
+     int write_value(const char *file, const char *value);
+ };
+ 
+diff --git a/aidl/VibratorOL/Vibrator.cpp b/aidl/VibratorOL/Vibrator.cpp
+--- a/aidl/VibratorOL/Vibrator.cpp
++++ b/aidl/VibratorOL/Vibrator.cpp
+@@ -409,10 +409,29 @@
+         return;
+     }
+ 
++    close(fd);
+     mDetected = true;
+ 
+     snprintf(devicename, sizeof(devicename), "%s/%s", LED_DEVICE, "device/driver");
+     mIsLdo = realpath(devicename, devicename) && strstr(devicename, "/qcom,qpnp-vibrator-ldo");
++#ifdef QPNP_AMPLITUDE
++    if (strcmp(devicename, "/sys/bus/platform/drivers/qcom,qpnp-haptics") == 0) {
++        auto qpnp = std::make_unique<QpnpAmplitude>([this](const char* node, int value) {
++            char path[PATH_MAX];
++            char text[32];
++            snprintf(path, sizeof(path), "%s/%s", LED_DEVICE, node);
++            snprintf(text, sizeof(text), "%d\n", value);
++            return write_value(path, text);
++        });
++        snprintf(devicename, sizeof(devicename), "%s/vmax_mv", LED_DEVICE);
++        fd = TEMP_FAILURE_RETRY(open(devicename, O_RDWR | O_CLOEXEC));
++        if (fd >= 0) {
++            close(fd);
++            if (qpnp->initialize() == 0) mQpnp = std::move(qpnp);
++        }
++        if (!mQpnp) ALOGE("QPNP amplitude initialization failed");
++    }
++#endif
+ }
+ 
+ int LedVibratorDevice::write_value(const char *file, const char *value) {
+@@ -445,6 +464,7 @@
+ }
+ 
+ int LedVibratorDevice::on(int32_t timeoutMs) {
++    if (mQpnp) return mQpnp->on(timeoutMs);
+     char file[PATH_MAX];
+     char value[32];
+     int ret;
+@@ -472,8 +492,13 @@
+     return ret;
+ }
+ 
++int LedVibratorDevice::setAmplitude(float amplitude) {
++    return mQpnp ? mQpnp->setAmplitude(amplitude) : -ENOTSUP;
++}
++
+ int LedVibratorDevice::off()
+ {
++    if (mQpnp) return mQpnp->off();
+     char file[PATH_MAX];
+     int ret;
+ 
+@@ -568,6 +593,7 @@
+     *_aidl_return = IVibrator::CAP_ON_CALLBACK;
+ 
+     if (ledVib.mDetected) {
++        if (ledVib.supportsAmplitude()) *_aidl_return = IVibrator::CAP_AMPLITUDE_CONTROL;
+         ALOGD("QTI Vibrator reporting capabilities: %d", *_aidl_return);
+         return ndk::ScopedAStatus::ok();
+     }
+@@ -622,6 +648,13 @@
+                                 const std::shared_ptr<IVibratorCallback>& callback) {
+     int ret;
+ 
++    if (ledVib.supportsAmplitude()) {
++        if (timeoutMs <= 0 || timeoutMs > 15000)
++            return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
++        if (callback != nullptr)
++            return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++    }
++
+     if (ledVib.mIsLdo) {
+         // See QPNP_VIB_MIN_PLAY_MS, QPNP_VIB_MAX_PLAY_MS in leds-qpnp-vibrator-ldo.c
+         timeoutMs = std::clamp(timeoutMs, 50, 15000);
+@@ -724,8 +757,15 @@
+     uint8_t tmp;
+     int ret;
+ 
+-    if (ledVib.mDetected)
+-        return ndk::ScopedAStatus(AStatus_fromExceptionCode(EX_UNSUPPORTED_OPERATION));
++    if (ledVib.mDetected) {
++        if (!ledVib.supportsAmplitude())
++            return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++        ret = ledVib.setAmplitude(amplitude);
++        if (ret == -EINVAL)
++            return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
++        if (ret != 0) return ndk::ScopedAStatus::fromServiceSpecificError(-ret);
++        return ndk::ScopedAStatus::ok();
++    }
+ 
+     if (!ff.mSupportGain)
+         return ndk::ScopedAStatus(AStatus_fromExceptionCode(EX_UNSUPPORTED_OPERATION));
+diff --git a/aidl/VibratorOL/Android.bp b/aidl/VibratorOL/Android.bp
+--- a/aidl/VibratorOL/Android.bp
++++ b/aidl/VibratorOL/Android.bp
+@@ -3,6 +3,9 @@
+     vendor: true,
+     cflags: Common_CFlags + select(soong_config_variable("qti_vibrator", "use_effect_stream"), {
+         true: ["-DUSE_EFFECT_STREAM"],
++        default: [],
++    }) + select(soong_config_variable("qti_vibrator", "qpnp_amplitude"), {
++        true: ["-DQPNP_AMPLITUDE"],
+         default: [],
+     }),
+     srcs: [

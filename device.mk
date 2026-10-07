@@ -87,3 +87,7 @@ PRODUCT_SYSTEM_PROPERTIES += \
 
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/display/display_port_129.xml:$(TARGET_COPY_OUT_VENDOR)/etc/displayconfig/display_port_129.xml
+
+$(call soong_config_set_bool,qti_vibrator,qpnp_amplitude,true)
+
+PRODUCT_PACKAGES += KeyHandlerResTarget

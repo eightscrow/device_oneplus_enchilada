@@ -1,0 +1,163 @@
+diff --git a/drivers/leds/leds-qpnp-haptics.c b/drivers/leds/leds-qpnp-haptics.c
+--- a/drivers/leds/leds-qpnp-haptics.c
++++ b/drivers/leds/leds-qpnp-haptics.c
+@@ -702,12 +702,13 @@
+ #define AUTO_RES_ERR_POLL_TIME_NS	(20 * NSEC_PER_MSEC)
+ static int qpnp_haptics_play(struct hap_chip *chip, bool enable)
+ {
+-	int rc = 0, time_ms = chip->play_time_ms;
++	int rc = 0, time_ms;
+ 
+ 	if (chip->perm_disable && enable)
+ 		return 0;
+ 
+ 	mutex_lock(&chip->play_lock);
++	time_ms = chip->play_time_ms;
+ 
+ 	if (enable) {
+ 		if (chip->play_mode == HAP_PWM) {
+@@ -783,9 +784,18 @@
+ 	enable = atomic_read(&chip->state);
+ 	pr_debug("state: %d\n", enable);
+ 	rc = qpnp_haptics_play(chip, enable);
+-	if (rc < 0)
++	if (rc < 0) {
+ 		pr_err("Error in %sing haptics, rc=%d\n",
+ 			enable ? "play" : "stopp", rc);
++		if (!enable) {
++			hrtimer_cancel(&chip->auto_res_err_poll_timer);
++			mutex_lock(&chip->play_lock);
++			rc = qpnp_haptics_mod_enable(chip, false);
++			mutex_unlock(&chip->play_lock);
++			if (rc < 0)
++				pr_err("Error disabling haptics module, rc=%d\n", rc);
++		}
++	}
+ }
+ 
+ static enum hrtimer_restart hap_stop_timer(struct hrtimer *timer)
+@@ -1226,12 +1236,6 @@
+ 		rc = qpnp_haptics_brake_config(chip, brake_pat);
+ 		if (rc < 0)
+ 			return rc;
+-
+-		/* enable play_irq for buffer mode */
+-		if (chip->play_irq >= 0 && !chip->play_irq_en) {
+-			enable_irq(chip->play_irq);
+-			chip->play_irq_en = true;
+-		}
+ 
+ 		chip->play_mode = HAP_BUFFER;
+ 		chip->wave_shape = HAP_WAVE_SINE;
+@@ -1488,14 +1492,17 @@
+ 		return -EINVAL;
+ 
+ 	mutex_lock(&chip->param_lock);
++	mutex_lock(&chip->play_lock);
+ 	rc = qpnp_haptics_auto_mode_config(chip, val);
+ 	if (rc < 0) {
+ 		pr_err("Unable to do auto mode config\n");
++		mutex_unlock(&chip->play_lock);
+ 		mutex_unlock(&chip->param_lock);
+ 		return rc;
+ 	}
+ 
+ 	chip->play_time_ms = val;
++	mutex_unlock(&chip->play_lock);
+ 	mutex_unlock(&chip->param_lock);
+ 
+ 	return count;
+@@ -1514,31 +1521,40 @@
+ 	struct led_classdev *cdev = dev_get_drvdata(dev);
+ 	struct hap_chip *chip = container_of(cdev, struct hap_chip, cdev);
+ 	u32 val;
+-	int rc;
++	int rc, disable_rc;
+ 
+ 	rc = kstrtouint(buf, 0, &val);
+ 	if (rc < 0)
+ 		return rc;
+-
+ 	if (val != 0 && val != 1)
+-		return count;
+-
+-	if (val) {
++		return -EINVAL;
++
++	mutex_lock(&chip->param_lock);
++	atomic_set(&chip->state, 0);
++	hrtimer_cancel(&chip->stop_timer);
++	hrtimer_cancel(&chip->auto_res_err_poll_timer);
++	cancel_work_sync(&chip->haptics_work);
++
++	atomic_set(&chip->state, val);
++	rc = qpnp_haptics_play(chip, val);
++	if (val && rc < 0) {
++		atomic_set(&chip->state, 0);
+ 		hrtimer_cancel(&chip->stop_timer);
+-		if (is_sw_lra_auto_resonance_control(chip))
+-			hrtimer_cancel(&chip->auto_res_err_poll_timer);
++		hrtimer_cancel(&chip->auto_res_err_poll_timer);
+ 		cancel_work_sync(&chip->haptics_work);
+-
+-		atomic_set(&chip->state, 1);
+-		schedule_work(&chip->haptics_work);
+-	} else {
+-		rc = qpnp_haptics_mod_enable(chip, false);
+-		if (rc < 0) {
+-			pr_err("Error in disabling module, rc=%d\n", rc);
+-			return rc;
+-		}
+-	}
+-
++		qpnp_haptics_play(chip, false);
++	}
++	if (!val || rc < 0) {
++		mutex_lock(&chip->play_lock);
++		disable_rc = qpnp_haptics_mod_enable(chip, false);
++		mutex_unlock(&chip->play_lock);
++		if (!rc)
++			rc = disable_rc;
++	}
++	mutex_unlock(&chip->param_lock);
++
++	if (rc < 0)
++		return rc;
+ 	return count;
+ }
+ 
+@@ -1762,14 +1778,18 @@
+ 	if (rc < 0)
+ 		return rc;
+ 
++	mutex_lock(&chip->param_lock);
++	mutex_lock(&chip->play_lock);
+ 	old_vmax_mv = chip->vmax_mv;
+ 	chip->vmax_mv = data;
+ 	rc = qpnp_haptics_vmax_config(chip, chip->vmax_mv, false);
+-	if (rc < 0) {
++	if (rc < 0)
+ 		chip->vmax_mv = old_vmax_mv;
+-		return rc;
+-	}
+-
++	mutex_unlock(&chip->play_lock);
++	mutex_unlock(&chip->param_lock);
++
++	if (rc < 0)
++		return rc;
+ 	return count;
+ }
+ 
+@@ -1948,8 +1968,9 @@
+ 		}
+ 
+ 		chip->play_irq_en = true;
+-		/* use play_irq only for buffer mode */
+-		if (chip->play_mode != HAP_BUFFER) {
++		/* Auto LRA pulses are bounded by stop_timer. */
++		if (chip->play_mode != HAP_BUFFER ||
++		    (chip->lra_auto_mode && chip->act_type == HAP_LRA)) {
+ 			disable_irq(chip->play_irq);
+ 			chip->play_irq_en = false;
+ 		}
