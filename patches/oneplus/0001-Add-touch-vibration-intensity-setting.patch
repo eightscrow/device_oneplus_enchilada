@@ -115,6 +115,16 @@ diff --git a/packages/KeyHandler/AndroidManifest.xml b/packages/KeyHandler/Andro
      <uses-permission android:name="com.android.systemui.permission.PLUGIN" />
  
      <protected-broadcast android:name="com.android.systemui.doze.pulse" />
+@@ -58,7 +59,8 @@
+         <activity
+             android:name=".ButtonSettingsActivity"
+             android:label="@string/button_panel_title"
+-            android:exported="false">
++            android:exported="true"
++            android:permission="android.permission.READ_SEARCH_INDEXABLES">
+             <intent-filter>
+                 <action android:name="org.lineageos.settings.device.ADDITIONAL_BUTTONS_SETTINGS" />
+                 <category android:name="android.intent.category.DEFAULT" />
 diff --git a/packages/KeyHandler/res/xml/button_panel.xml b/packages/KeyHandler/res/xml/button_panel.xml
 --- a/packages/KeyHandler/res/xml/button_panel.xml
 +++ b/packages/KeyHandler/res/xml/button_panel.xml
