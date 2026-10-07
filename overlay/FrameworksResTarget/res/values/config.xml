@@ -395,4 +395,5 @@
     <!-- Use the native pickup menu; opt in through Settings. -->
     <bool name="config_dozePulsePickup">true</bool>
     <bool name="config_dozePickupGestureEnabled">false</bool>
+    <bool name="config_setVibrationAmplitudeBeforeOn">true</bool>
 </resources>
