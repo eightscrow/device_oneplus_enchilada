@@ -130,12 +130,12 @@ git -C packages/apps/Settings apply ../../../device/oneplus/enchilada/patches/se
 
 Use the framework base above, QCOM vibrator
 `7ec51495bebe272097fc5b7f95cbf5ff92180e71`, OnePlus hardware
-`1491bd7c03e831d0df90e00377ade708f32888ab` and SDM845 kernel
-`4c0b4d6af5a511fc81269e278759fb0e640568f8`.
+`1491bd7c03e831d0df90e00377ade708f32888ab` and
+[eightscrow/android_kernel_oneplus_sdm845](https://github.com/eightscrow/android_kernel_oneplus_sdm845)
+at `add4fb4356c4ffff7949a9c8d8d927f21d37e34f`.
 
 ```sh
 git -C frameworks/base apply ../../device/oneplus/enchilada/patches/frameworks_base/0005-Scale-touch-vibration-amplitudes.patch
 git -C vendor/qcom/opensource/vibrator apply ../../../../device/oneplus/enchilada/patches/qcom_vibrator/0001-Control-QPNP-haptic-amplitude.patch
 git -C hardware/oneplus apply ../../device/oneplus/enchilada/patches/oneplus/0001-Add-touch-vibration-intensity-setting.patch
-git -C kernel/oneplus/sdm845 apply ../../../device/oneplus/enchilada/patches/kernel/0001-Serialize-QPNP-haptic-activation.patch
 ```
