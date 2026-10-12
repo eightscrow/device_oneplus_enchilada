@@ -28,7 +28,7 @@ Do not reapply patches already present in the source tree.
 
 ## WebView
 
-Use the arm64 WebView revision `394b243c2796e36580dd8bae7822609e1c01b1ff`
+Use the arm64 WebView revision `604ad4cbc41d3b894065ee6e83189c76e1ec06a1`
 from LineageOS/android_external_chromium-webview_prebuilt_arm64. Materialize its
 Git LFS APK; the object SHA-256 is
-`3b98460ccd41b2a1851c5a46e6dec6f86f1d14302ff2fa4deeb1d781e32f89a4`.
+`e91bced008fa9a2976997072cd9168c653905b538217530994f20d73276e72d9`.
