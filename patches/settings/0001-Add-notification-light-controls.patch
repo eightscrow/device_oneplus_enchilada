@@ -467,9 +467,9 @@ diff --git a/src/com/android/settings/core/gateway/SettingsGateway.java b/src/co
 diff --git a/AndroidManifest.xml b/AndroidManifest.xml
 --- a/AndroidManifest.xml
 +++ b/AndroidManifest.xml
-@@ -6475,5 +6475,8 @@
-             </intent-filter>
-         </receiver>
+@@ -6491,5 +6491,8 @@
+                 android:value="@string/menu_key_apps"/>
+         </activity>
  
 +        <receiver
 +            android:name=".notification.NotificationLightPreview"
