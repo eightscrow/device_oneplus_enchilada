@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: eightscrow <183341520+eightscrow@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 08:18:56 +0200
+Subject: [PATCH] Camera2: Apply the vendor stream configuration mode per
+ capture session
+
+Apply the mode in createCaptureSessionInternal so that the batched
+configure path carries it, consume it once, leave constrained high speed
+and shared sessions unchanged, and keep the CameraDevice method concrete.
+---
+ .../hardware/camera2/CameraDevice.java        | 11 ++++--
+ .../camera2/impl/CameraDeviceImpl.java        | 34 ++++++++++++++++---
+ 2 files changed, 37 insertions(+), 8 deletions(-)
+
+diff --git a/core/java/android/hardware/camera2/CameraDevice.java b/core/java/android/hardware/camera2/CameraDevice.java
+index aebfe04b5..bd4160186 100644
+--- a/core/java/android/hardware/camera2/CameraDevice.java
++++ b/core/java/android/hardware/camera2/CameraDevice.java
+@@ -1409,9 +1409,14 @@ public abstract class CameraDevice implements AutoCloseable {
+     @Override
+     public abstract void close();
+ 
+-    /** @hide */
+-    public abstract void setVendorStreamConfigMode(int index)
+-            throws CameraAccessException;
++    /**
++     * Select the vendor sensor mode index for the next capture session created on this device.
++     *
++     * @hide
++     */
++    public void setVendorStreamConfigMode(int index)
++            throws CameraAccessException {
++    }
+ 
+     /**
+      * Checks whether a particular {@link SessionConfiguration} is supported by the camera device.
+diff --git a/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java b/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
+index 89700cf9e..7abeba4d7 100644
+--- a/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
++++ b/core/java/android/hardware/camera2/impl/CameraDeviceImpl.java
+@@ -132,7 +132,9 @@ public class CameraDeviceImpl extends CameraDevice
+     @EnabledSince(targetSdkVersion = Build.VERSION_CODES.VANILLA_ICE_CREAM)
+     static final long CHECK_PARAMS_IN_IS_SESSION_CONFIGURATION_SUPPORTED = 320741775;
+ 
+-    private int customOpMode = 0;
++    // Sensor mode index for the next createCaptureSessionInternal() call; direct stream
++    // (un)configuration does not use it. See setVendorStreamConfigMode().
++    private int mVendorStreamConfigMode = 0;
+ 
+     // TODO: guard every function with if (!mRemoteDevice) check (if it was closed)
+     private ICameraDeviceUserWrapper mRemoteDevice;
+@@ -590,8 +592,26 @@ public class CameraDeviceImpl extends CameraDevice
+         }
+     }
+ 
+-    public void setVendorStreamConfigMode(int fpsrange) {
+-        customOpMode = fpsrange;
++    @Override
++    public void setVendorStreamConfigMode(int index) {
++        synchronized(mInterfaceLock) {
++            mVendorStreamConfigMode = index;
++        }
++    }
++
++    /**
++     * Carry a vendor sensor mode index in the upper halfword of the operating mode. Constrained
++     * high speed and shared sessions are left unchanged because their modes are compared by
++     * equality; indices outside 1..0x7fff are ignored so that the mode stays positive. The HAL
++     * defines which indices it accepts.
++     */
++    static int applyVendorStreamConfigMode(int operatingMode, int index) {
++        if (index <= 0 || index > 0x7fff
++                || operatingMode == ICameraDeviceUser.CONSTRAINED_HIGH_SPEED_MODE
++                || operatingMode == ICameraDeviceUser.SHARED_MODE) {
++            return operatingMode;
++        }
++        return operatingMode | (index << 16);
+     }
+ 
+     @Override
+@@ -727,7 +747,6 @@ public class CameraDeviceImpl extends CameraDevice
+                                     new OutputConfiguration(outConfig) : outConfig);
+                         }
+                     }
+-                    operatingMode = (operatingMode | (customOpMode << 16));
+ 
+                     if (sessionParams != null) {
+                         offlineStreamIds = mRemoteDevice.endConfigure(operatingMode,
+@@ -1020,6 +1039,11 @@ public class CameraDeviceImpl extends CameraDevice
+ 
+             checkIfCameraClosedOrInError();
+ 
++            // A pending sensor mode index is consumed here, whatever the outcome of this
++            // session attempt.
++            int configureMode = applyVendorStreamConfigMode(operatingMode, mVendorStreamConfigMode);
++            mVendorStreamConfigMode = 0;
++
+             boolean isSharedSession = (operatingMode == ICameraDeviceUser.SHARED_MODE);
+             if (mSharedMode) {
+                 if (!isSharedSession) {
+@@ -1072,7 +1096,7 @@ public class CameraDeviceImpl extends CameraDevice
+             try {
+                 // configure streams and then block until IDLE
+                 configureSuccess = configureStreamsChecked(inputConfig, outputConfigurations,
+-                        operatingMode, sessionParams, createSessionStartTime);
++                        configureMode, sessionParams, createSessionStartTime);
+                 if (configureSuccess == true && inputConfig != null) {
+                     input = mRemoteDevice.getInputSurface();
+                 }
+-- 
+2.56.0
+
