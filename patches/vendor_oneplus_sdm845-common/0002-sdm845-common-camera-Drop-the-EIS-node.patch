@@ -1,0 +1,71 @@
+From 9e6edca1f3840c5840e708ab4a0833def7bf0c03 Mon Sep 17 00:00:00 2001
+From: eightscrow <183341520+eightscrow@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 13:43:16 +0200
+Subject: [PATCH] sdm845-common: camera: Drop the EIS node provided by the
+ camera package
+
+---
+ Android.bp              | 34 ----------------------------------
+ sdm845-common-vendor.mk |  1 -
+ 2 files changed, 35 deletions(-)
+
+diff --git a/Android.bp b/Android.bp
+index 728e81b..238306d 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -3736,40 +3736,6 @@ cc_prebuilt_library_shared {
+     soc_specific: true,
+ }
+ 
+-cc_prebuilt_library_shared {
+-    name: "com.oneplus.node.eis",
+-    owner: "oneplus",
+-    strip: {
+-        none: true,
+-    },
+-    target: {
+-        android_arm: {
+-            srcs: [
+-                "proprietary/vendor/lib/camera/components/com.oneplus.node.eis.so",
+-            ],
+-            shared_libs: [
+-                "libSensorManagerHAL",
+-                "libcamera_metadata",
+-                "libcom.qti.chinodeutils",
+-                "libcutils",
+-                "liblog",
+-                "libutils",
+-                "libui",
+-                "libvidhance",
+-                "libsensorslog",
+-                "libc++",
+-                "libc",
+-                "libm",
+-                "libdl",
+-            ],
+-        },
+-    },
+-    compile_multilib: "32",
+-    relative_install_path: "camera/components",
+-    prefer: true,
+-    soc_specific: true,
+-}
+-
+ cc_prebuilt_library_shared {
+     name: "com.oneplus.node.facebeauty",
+     owner: "oneplus",
+diff --git a/sdm845-common-vendor.mk b/sdm845-common-vendor.mk
+index bb4b499..5bd02a4 100644
+--- a/sdm845-common-vendor.mk
++++ b/sdm845-common-vendor.mk
+@@ -405,7 +405,6 @@ PRODUCT_PACKAGES += \
+     com.qti.sensor.imx376k \
+     com.qti.sensor.imx519 \
+     com.oneplus.node.bokeh \
+-    com.oneplus.node.eis \
+     com.oneplus.node.facebeauty \
+     com.oneplus.node.preview \
+     com.oneplus.node.rtb \
+-- 
+2.56.0
+
