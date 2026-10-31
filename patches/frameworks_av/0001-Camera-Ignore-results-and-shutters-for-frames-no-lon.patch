@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: eightscrow <183341520+eightscrow@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 13:50:23 +0200
+Subject: [PATCH] Camera: Ignore results and shutters for frames no longer in
+ flight
+
+A late result or shutter for a frame that has already completed has
+nothing left to deliver. Treating it as a device error also waits for
+the device lock, which stream configuration holds while the HAL may
+still deliver such callbacks.
+---
+ .../libcameraservice/device3/Camera3OutputUtils.cpp    | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/services/camera/libcameraservice/device3/Camera3OutputUtils.cpp b/services/camera/libcameraservice/device3/Camera3OutputUtils.cpp
+index 41c3266..f70f76b 100644
+--- a/services/camera/libcameraservice/device3/Camera3OutputUtils.cpp
++++ b/services/camera/libcameraservice/device3/Camera3OutputUtils.cpp
+@@ -758,9 +758,8 @@ void processCaptureResult(CaptureOutputStates& states, const camera_capture_resu
+         std::lock_guard<std::mutex> l(states.inflightLock);
+         ssize_t idx = states.inflightMap.indexOfKey(frameNumber);
+         if (idx == NAME_NOT_FOUND) {
+-            SET_ERR(CAMERA_HAL_CALLBACK_ERROR,
+-                "Unknown frame number for capture result: %d",
+-                    frameNumber);
++            ALOGW("Camera %s: %s: dropping capture result for frame %d that is not in flight",
++                    states.cameraId.c_str(), __FUNCTION__, frameNumber);
+             return;
+         }
+         InFlightRequest &request = states.inflightMap.editValueAt(idx);
+@@ -1356,9 +1355,8 @@ void notifyShutter(CaptureOutputStates& states, const camera_shutter_msg_t &msg)
+         }
+     }
+     if (idx < 0) {
+-        SET_ERR(CAMERA_HAL_CALLBACK_ERROR,
+-            "Shutter notification for non-existent frame number %d",
+-                msg.frame_number);
++        ALOGW("Camera %s: %s: dropping shutter notification for frame %d that is not in flight",
++                states.cameraId.c_str(), __FUNCTION__, msg.frame_number);
+     }
+     // Call notifyShutter outside of in-flight mutex
+     if (flags::return_buffers_outside_locks() && pendingNotificationResultExtras.isValid()) {
+-- 
+2.56.0
+
