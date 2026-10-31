@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: eightscrow <183341520+eightscrow@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 13:50:22 +0200
+Subject: [PATCH] Camera: Do not hold the inflight lock across
+ configure_streams
+
+A legacy HAL can still deliver results for completed frames while it
+tears down the previous session inside configure_streams. Those
+callbacks need the inflight lock, so the configuration never returns.
+Drop callbacks during the configuration and fail it after a device
+error.
+---
+ .../3.2/default/CameraDeviceSession.cpp       | 26 +++++++++++++++++++
+ .../device/3.2/default/CameraDeviceSession.h  |  5 ++++
+ .../3.3/default/CameraDeviceSession.cpp       | 21 +++++++++++++--
+ 3 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/camera/device/3.2/default/CameraDeviceSession.cpp b/camera/device/3.2/default/CameraDeviceSession.cpp
+index 6e5c714..647186e 100644
+--- a/camera/device/3.2/default/CameraDeviceSession.cpp
++++ b/camera/device/3.2/default/CameraDeviceSession.cpp
+@@ -1570,6 +1570,17 @@ void CameraDeviceSession::sProcessCaptureResult(
+     CameraDeviceSession *d =
+             const_cast<CameraDeviceSession*>(static_cast<const CameraDeviceSession*>(cb));
+ 
++    {
++        Mutex::Autolock _l(d->mInflightLock);
++        if (d->mConfiguring) {
++            ALOGW("%s: dropping result for frame %u during stream configuration"
++                    " (%u output buffers, input buffer %d, metadata %d)", __FUNCTION__,
++                    hal_result->frame_number, hal_result->num_output_buffers,
++                    hal_result->input_buffer != nullptr, hal_result->result != nullptr);
++            return;
++        }
++    }
++
+     CaptureResult result = {};
+     camera3_capture_result shadowResult;
+     bool handlePhysCam = (d->mDeviceVersion >= CAMERA_DEVICE_API_VERSION_3_5);
+@@ -1588,6 +1599,21 @@ void CameraDeviceSession::sNotify(
+         const camera3_notify_msg *msg) {
+     CameraDeviceSession *d =
+             const_cast<CameraDeviceSession*>(static_cast<const CameraDeviceSession*>(cb));
++
++    {
++        Mutex::Autolock _l(d->mInflightLock);
++        bool isError = msg->type == CAMERA3_MSG_ERROR;
++        if (isError && msg->message.error.error_code == CAMERA3_MSG_ERROR_DEVICE) {
++            d->mDeviceError = true;
++        }
++        if (d->mConfiguring) {
++            ALOGW("%s: dropping notify type %d error %d for frame %u during stream configuration",
++                    __FUNCTION__, msg->type, isError ? msg->message.error.error_code : 0,
++                    isError ? msg->message.error.frame_number : msg->message.shutter.frame_number);
++            return;
++        }
++    }
++
+     NotifyMsg hidlMsg;
+     convertToHidl(msg, &hidlMsg);
+ 
+diff --git a/camera/device/3.2/default/CameraDeviceSession.h b/camera/device/3.2/default/CameraDeviceSession.h
+index 0db926d..0270d4d 100644
+--- a/camera/device/3.2/default/CameraDeviceSession.h
++++ b/camera/device/3.2/default/CameraDeviceSession.h
+@@ -157,6 +157,11 @@ protected:
+     // (streamID, frameNumber) -> inflight buffer cache
+     std::map<std::pair<int, uint32_t>, camera3_stream_buffer_t>  mInflightBuffers;
+ 
++    // Set while configure_streams runs without mInflightLock; HAL callbacks are dropped then.
++    bool mConfiguring = false;
++    // Set on any ERROR_DEVICE; later stream configurations fail without calling the HAL.
++    bool mDeviceError = false;
++
+     // (frameNumber, AETriggerOverride) -> inflight request AETriggerOverrides
+     std::map<uint32_t, AETriggerCancelOverride> mInflightAETriggerOverrides;
+     ::android::hardware::camera::common::V1_0::helper::CameraMetadata mOverridenResult;
+diff --git a/camera/device/3.3/default/CameraDeviceSession.cpp b/camera/device/3.3/default/CameraDeviceSession.cpp
+index 60174fb..3437d3f 100644
+--- a/camera/device/3.3/default/CameraDeviceSession.cpp
++++ b/camera/device/3.3/default/CameraDeviceSession.cpp
+@@ -46,8 +46,9 @@ Return<void> CameraDeviceSession::configureStreams_3_3(
+     Status status = initStatus();
+     HalStreamConfiguration outStreams;
+ 
+-    // hold the inflight lock for entire configureStreams scope since there must not be any
+-    // inflight request/results during stream configuration.
++    // There must not be any inflight request/results during stream configuration. The lock is
++    // released across configure_streams: the HAL may still report on completed frames while it
++    // tears down the previous session, and those callbacks take this lock.
+     Mutex::Autolock _l(mInflightLock);
+     if (!mInflightBuffers.empty()) {
+         ALOGE("%s: trying to configureStreams while there are still %zu inflight buffers!",
+@@ -77,6 +78,12 @@ Return<void> CameraDeviceSession::configureStreams_3_3(
+         return Void();
+     }
+ 
++    if (mDeviceError) {
++        ALOGE("%s: camera device reported a device error", __FUNCTION__);
++        _hidl_cb(Status::INTERNAL_ERROR, outStreams);
++        return Void();
++    }
++
+     camera3_stream_configuration_t stream_list{};
+     hidl_vec<camera3_stream_t*> streams;
+     if (!preProcessConfigurationLocked(requestedConfiguration, &stream_list, &streams)) {
+@@ -84,9 +91,13 @@ Return<void> CameraDeviceSession::configureStreams_3_3(
+         return Void();
+     }
+ 
++    mConfiguring = true;
++    mInflightLock.unlock();
+     ATRACE_BEGIN("camera3->configure_streams");
+     status_t ret = mDevice->ops->configure_streams(mDevice, &stream_list);
+     ATRACE_END();
++    mInflightLock.lock();
++    mConfiguring = false;
+ 
+     // In case Hal returns error most likely it was not able to release
+     // the corresponding resources of the deleted streams.
+@@ -105,6 +116,12 @@ Return<void> CameraDeviceSession::configureStreams_3_3(
+         mFirstRequest = true;
+     }
+ 
++    if (mDeviceError) {
++        ALOGE("%s: camera device reported a device error during stream configuration",
++                __FUNCTION__);
++        status = Status::INTERNAL_ERROR;
++    }
++
+     _hidl_cb(status, outStreams);
+     return Void();
+ }
+-- 
+2.56.0
+
