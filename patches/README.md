@@ -44,7 +44,7 @@ provides the replacement EIS node.
 
 ## WebView
 
-Use the arm64 WebView revision `604ad4cbc41d3b894065ee6e83189c76e1ec06a1`
+Use the arm64 WebView revision `5de662a4d42b57a2efe4114e499d38fa3ce41f9d`
 from LineageOS/android_external_chromium-webview_prebuilt_arm64. Materialize its
 Git LFS APK; the object SHA-256 is
-`e91bced008fa9a2976997072cd9168c653905b538217530994f20d73276e72d9`.
+`1d2f61832b2596b0046cb82cf3634609ea866098d097a83fac27c35272ac726a`.
