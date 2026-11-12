@@ -4,14 +4,14 @@ Apply from the Android source root after syncing these revisions:
 
 | Project | Source | Revision |
 | --- | --- | --- |
-| frameworks/base | VoltageOS/frameworks_base_new | d4c1e14903c7bc20d7524462263772b7767855c1 |
-| frameworks/native | VoltageOS/frameworks_native | 35870619d3d7d23675438f7dd77c6566e5d67ef7 |
-| frameworks/av | VoltageOS/frameworks_av | 3f9901cd806484e00004b5a7d8ec2ce41700d711 |
-| packages/apps/Settings | VoltageOS/packages_apps_Settings | a75b43383ae44b98144398caa3d1dd22fc7ee133 |
+| frameworks/base | VoltageOS/frameworks_base_new | 6cb12a1f50ec579923a2ea0bd2c4db754f05a721 |
+| frameworks/native | VoltageOS/frameworks_native | 7118a8f12e8e2ce787927b8f7c80254fb27a395f |
+| frameworks/av | VoltageOS/frameworks_av | fe2a827affdc4dce97b82beee5f33d5250376889 |
+| packages/apps/Settings | VoltageOS/packages_apps_Settings | 0b682491d9d14f07ff5a51e2d5bf5b97e2444cca |
 | hardware/qcom-caf/sm8250/display | LineageOS/android_hardware_qcom_display | bf8aef12e2e95153f497e30d1791555cf7ff9b07 |
-| vendor/qcom/opensource/vibrator | LineageOS/android_vendor_qcom_opensource_vibrator | 9d748eb141ebbdc39b8969f558c2a83391a39a77 |
-| hardware/oneplus | LineageOS/android_hardware_oneplus | 3978f537f364fa8c8b23bab1ec870bd1eac17bc9 |
-| hardware/interfaces | VoltageOS/hardware_interfaces | 6b3a497afc74b57d4296b2ff108839f5cf3265ea |
+| vendor/qcom/opensource/vibrator | LineageOS/android_vendor_qcom_opensource_vibrator | 97d88ab231d84ba0b5549e6d6148522d6d73ee24 |
+| hardware/oneplus | LineageOS/android_hardware_oneplus | 37f806c3edbe5e5ff099958b30cab6a3c33db35d |
+| hardware/interfaces | VoltageOS/hardware_interfaces | ff50b16a72d6e91b44fc7b4e95488d3829dd7f70 |
 | vendor/oneplus/sdm845-common | OnePlus-6T-Development/vendor_oneplus_sdm845-common | 9ba1d09f1cfe715363856f34ab1aadba7032a87a |
 | kernel/oneplus/sdm845 | eightscrow/android_kernel_oneplus_sdm845 | add4fb4356c4ffff7949a9c8d8d927f21d37e34f |
 
